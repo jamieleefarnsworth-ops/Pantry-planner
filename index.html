@@ -3,12 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#111315" />
-<meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<link rel="manifest" href="manifest.webmanifest" />
-<title>Pantry Planner v4</title>
+<title>Pantry Planner v4.1</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -46,10 +41,10 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4</h1>
+      <h1>Pantry Planner v4.1</h1>
       <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
     </div>
-    <div class="row"><button id="installApp" class="btn primary hidden" type="button">Install app</button><button id="resetAll" class="btn danger" type="button">Reset all data</button></div>
+    <button id="resetAll" class="btn danger" type="button">Reset all data</button>
   </div>
 
   <div class="tabs">
@@ -72,7 +67,7 @@
         <label>Calories / serving<input id="foodCal" type="number" min="0" step="1" value="120" required></label>
         <label>Protein g / serving<input id="foodProtein" type="number" min="0" step="1" value="20" required></label>
         <label>Category<select id="foodCategory"><option>Protein</option><option>Carb</option><option>Vegetable</option><option>Dairy</option><option>Snack</option><option>Condiment</option><option>Other</option></select></label>
-        <label>Who can eat it?<select id="foodOwner"><option value="Both">Both</option></select></label>
+        <label>Who can eat it?<select id="foodOwner"><option value="Everyone">Everyone</option></select></label>
         <label>Use soon?<select id="foodSoon"><option>No</option><option>Yes</option></select></label>
         <div class="row" style="align-self:end">
           <button id="saveFoodBtn" class="btn primary" type="submit">Add food</button>
@@ -105,12 +100,36 @@
 
   <section id="meal" class="tab-panel hidden">
     <div class="panel">
-      <div class="grid">
-        <label>Meal<select id="mealType"><option>Breakfast</option><option>Lunch</option><option selected>Dinner</option><option>Snack</option></select></label>
-        <label>Priority<select id="mealPriority"><option value="balanced">Balanced</option><option value="protein">Highest protein</option><option value="use-soon">Use food soon</option><option value="stretch">Stretch inventory</option></select></label>
-        <div style="align-self:end"><button id="generateMeal" class="btn primary" type="button">Generate meal</button></div>
+      <div class="row" style="margin-bottom:12px">
+        <button id="showGeneratedMeal" class="btn active" type="button">Generate Meal</button>
+        <button id="showCustomMeal" class="btn" type="button">Build My Own Meal</button>
       </div>
-      <p class="muted small">Every included ingredient uses at least 1 full serving. Press again for a different valid meal.</p>
+
+      <div id="generatedMealBuilder">
+        <div class="grid">
+          <label>Meal<select id="mealType"><option>Breakfast</option><option>Lunch</option><option selected>Dinner</option><option>Snack</option></select></label>
+          <label>Priority<select id="mealPriority"><option value="balanced">Balanced</option><option value="protein">Highest protein</option><option value="use-soon">Use food soon</option><option value="stretch">Stretch inventory</option></select></label>
+          <div style="align-self:end"><button id="generateMeal" class="btn primary" type="button">Generate meal</button></div>
+        </div>
+        <p class="muted small">Every included ingredient uses at least 1 full serving. Press again for a different valid meal.</p>
+      </div>
+
+      <div id="customMealBuilder" class="hidden">
+        <h2>Build my own meal</h2>
+        <p class="muted small">Pick an ingredient, servings, and who is eating it. Add as many items as you want.</p>
+        <div class="grid">
+          <label>Ingredient<select id="customFood"></select></label>
+          <label>Servings<input id="customServings" type="number" min="0.25" step="0.25" value="1"></label>
+          <label>For<select id="customPerson"></select></label>
+          <div style="align-self:end"><button id="addCustomItem" class="btn primary" type="button">Add to meal</button></div>
+        </div>
+        <div id="customMealItems" style="margin-top:12px"></div>
+        <div id="customMealTotals" class="status muted small"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="useCustomMeal" class="btn primary" type="button">Use this meal</button>
+          <button id="clearCustomMeal" class="btn" type="button">Clear meal</button>
+        </div>
+      </div>
     </div>
     <div id="mealResult" class="panel" style="margin-top:12px">
       <h2>Generated meal</h2><p class="muted">Generate a meal to see a suggestion.</p>
@@ -146,9 +165,9 @@
       {id:2,name:"Jackie",breakfast:450,lunch:450,dinner:450,snack:180,daily:1600,protein:85}
     ],
     foods:[
-      {id:1,name:"Chicken breast",qty:6,cal:110,protein:26,category:"Protein",owner:"Both",soon:"Yes"},
-      {id:2,name:"Red potatoes",qty:8,cal:110,protein:3,category:"Carb",owner:"Both",soon:"No"},
-      {id:3,name:"Oikos yogurt",qty:4,cal:80,protein:15,category:"Dairy",owner:"Both",soon:"Yes"}
+      {id:1,name:"Chicken breast",qty:6,cal:110,protein:26,category:"Protein",owner:"Everyone",soon:"Yes"},
+      {id:2,name:"Red potatoes",qty:8,cal:110,protein:3,category:"Carb",owner:"Everyone",soon:"No"},
+      {id:3,name:"Oikos yogurt",qty:4,cal:80,protein:15,category:"Dairy",owner:"Everyone",soon:"Yes"}
     ],
     shopping:[],
     lastMealSignatures:[],
@@ -161,7 +180,13 @@
   function load(){
     try{
       const raw=localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : structuredClone(seed);
+      const loaded = raw ? JSON.parse(raw) : structuredClone(seed);
+      loaded.foods = (loaded.foods||[]).map(f=>({...f,owner:f.owner==="Both"?"Everyone":f.owner}));
+      loaded.shopping = loaded.shopping||[];
+      loaded.people = loaded.people||[];
+      loaded.lastMealSignatures = loaded.lastMealSignatures||[];
+      loaded.generateCount = loaded.generateCount||0;
+      return loaded;
     }catch(e){ return JSON.parse(JSON.stringify(seed)); }
   }
   function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -178,9 +203,9 @@
   });
 
   function syncOwners(){
-    const sel=$("#foodOwner"), cur=sel.value;
-    sel.innerHTML='<option value="Both">Both</option>'+state.people.map(p=>`<option value="${esc(p.name)}">${esc(p.name)} only</option>`).join("");
-    if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+    const sel=$("#foodOwner"), cur=sel.value==="Both"?"Everyone":sel.value;
+    sel.innerHTML='<option value="Everyone">Everyone</option>'+state.people.map(p=>`<option value="${esc(p.name)}">${esc(p.name)} only</option>`).join("");
+    if([...sel.options].some(o=>o.value===cur)) sel.value=cur; else sel.value="Everyone";
   }
 
   function renderPeople(){
@@ -214,7 +239,7 @@
             <button class="btn danger" data-remove-food="${f.id}">Remove</button>
           </div>
         </div>
-        <span class="badge">${esc(f.category)}</span><span class="badge">${esc(f.owner)}</span>${f.soon==="Yes"?'<span class="badge">Use soon</span>':""}
+        <span class="badge">${esc(f.category)}</span><span class="badge">${esc(f.owner==="Both"?"Everyone":f.owner)}</span>${f.soon==="Yes"?'<span class="badge">Use soon</span>':""}
       </div>`).join("") : '<p class="muted">No food entered yet.</p>';
 
     $$("[data-edit-food]").forEach(b=>b.onclick=()=>startEdit(Number(b.dataset.editFood)));
@@ -223,6 +248,7 @@
       if(editingFoodId===Number(b.dataset.removeFood)) cancelEdit();
       save(); renderFoods();
     });
+    renderCustomMealOptions();
   }
 
   function startEdit(id){
@@ -283,7 +309,7 @@
   };
 
   function mealLimit(p,type){ return p[type.toLowerCase()] || 500; }
-  function eligible(person){ return state.foods.filter(f=>f.qty>=1&&(f.owner==="Both"||f.owner===person.name)); }
+  function eligible(person){ return state.foods.filter(f=>f.qty>=1&&(f.owner==="Everyone"||f.owner==="Both"||f.owner===person.name)); }
   function score(f,priority){
     if(priority==="protein") return f.protein*10+(f.soon==="Yes"?2:0);
     if(priority==="use-soon") return (f.soon==="Yes"?100:0)+f.protein;
@@ -330,6 +356,22 @@
     save();
     return r;
   }
+  function addToShoppingIfNeeded(food){
+    if(food.qty>0) return;
+    const exists=state.shopping.some(i=>i.name.trim().toLowerCase()===food.name.trim().toLowerCase());
+    if(!exists) state.shopping.push({id:Date.now()+Math.random(),name:food.name});
+  }
+
+  function applyUsage(usage){
+    Object.entries(usage).forEach(([id,amt])=>{
+      const f=state.foods.find(x=>x.id===Number(id));
+      if(!f) return;
+      f.qty=Math.max(0,Number((f.qty-amt).toFixed(2)));
+      addToShoppingIfNeeded(f);
+    });
+    save(); renderFoods(); renderShopping(); renderCustomMealOptions();
+  }
+
   function renderMeal(result,type){
     if(!result.length){$("#mealResult").innerHTML='<h2>Generated meal</h2><p class="muted">Add household members first.</p>';return;}
     $("#mealResult").innerHTML=`
@@ -339,8 +381,8 @@
       <strong>${r.totalCal} cal · ${r.totalProtein}g protein</strong></div>`).join("")}`;
     $("#useMeal").onclick=()=>{
       const usage={}; result.forEach(r=>r.items.forEach(i=>usage[i.food.id]=(usage[i.food.id]||0)+i.servings));
-      Object.entries(usage).forEach(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); if(f) f.qty=Math.max(0,f.qty-amt);});
-      save(); renderFoods(); $("#useMeal").disabled=true; $("#useMeal").textContent="Inventory updated";
+      applyUsage(usage);
+      $("#useMeal").disabled=true; $("#useMeal").textContent="Inventory & shopping list updated";
     };
   }
 
@@ -349,6 +391,72 @@
     renderMeal(generateDifferent(type,priority),type); $("#generateMeal").textContent="Try another";
   };
   $("#mealType").onchange=$("#mealPriority").onchange=()=>{state.lastMealSignatures=[];$("#generateMeal").textContent="Generate meal";save();};
+
+  let customMeal=[];
+
+  function renderCustomMealOptions(){
+    const foodSel=$("#customFood"), personSel=$("#customPerson");
+    if(!foodSel||!personSel) return;
+    const currentFood=foodSel.value, currentPerson=personSel.value;
+    const foods=state.foods.filter(f=>f.qty>0);
+    foodSel.innerHTML=foods.length?foods.map(f=>`<option value="${f.id}">${esc(f.name)} (${f.qty} servings)</option>`).join(""):'<option value="">No inventory available</option>';
+    if([...foodSel.options].some(o=>o.value===currentFood)) foodSel.value=currentFood;
+    personSel.innerHTML='<option value="Everyone">Everyone (each person)</option>'+state.people.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+    if([...personSel.options].some(o=>o.value===currentPerson)) personSel.value=currentPerson;
+  }
+
+  function customMultiplier(person){ return person==="Everyone" ? Math.max(1,state.people.length) : 1; }
+
+  function renderCustomMeal(){
+    const box=$("#customMealItems"), totals=$("#customMealTotals");
+    if(!customMeal.length){
+      box.innerHTML='<p class="muted small">No ingredients added yet.</p>';
+      totals.textContent='0 calories · 0g protein';
+      $("#useCustomMeal").disabled=true;
+      return;
+    }
+    box.innerHTML=customMeal.map((i,idx)=>{
+      const f=state.foods.find(x=>x.id===i.foodId); if(!f) return '';
+      const mult=customMultiplier(i.person), totalServings=i.servings*mult;
+      const servingText=i.person==="Everyone"?`${i.servings} serving${i.servings===1?'':'s'} each · Everyone`:`${i.servings} serving${i.servings===1?'':'s'} · ${esc(i.person)}`;
+      return `<div class="card between" style="margin-bottom:8px"><div><strong>${esc(f.name)}</strong><div class="muted small">${servingText}</div></div><div class="row"><span>${Math.round(f.cal*totalServings)} cal · ${Math.round(f.protein*totalServings)}g protein</span><button class="btn danger" data-remove-custom="${idx}">Remove</button></div></div>`;
+    }).join('');
+    $$('[data-remove-custom]').forEach(b=>b.onclick=()=>{customMeal.splice(Number(b.dataset.removeCustom),1);renderCustomMeal();});
+    const cal=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.cal*i.servings*customMultiplier(i.person):0)},0);
+    const protein=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.protein*i.servings*customMultiplier(i.person):0)},0);
+    totals.textContent=`Meal total: ${Math.round(cal)} calories · ${Math.round(protein)}g protein`;
+    $("#useCustomMeal").disabled=false;
+  }
+
+  $("#showGeneratedMeal").onclick=()=>{
+    $("#generatedMealBuilder").classList.remove("hidden"); $("#customMealBuilder").classList.add("hidden"); $("#mealResult").classList.remove("hidden");
+    $("#showGeneratedMeal").classList.add("active"); $("#showCustomMeal").classList.remove("active");
+  };
+  $("#showCustomMeal").onclick=()=>{
+    $("#generatedMealBuilder").classList.add("hidden"); $("#customMealBuilder").classList.remove("hidden"); $("#mealResult").classList.add("hidden");
+    $("#showCustomMeal").classList.add("active"); $("#showGeneratedMeal").classList.remove("active");
+    renderCustomMealOptions(); renderCustomMeal();
+  };
+  $("#addCustomItem").onclick=()=>{
+    const foodId=Number($("#customFood").value), servings=num($("#customServings").value,0.25), person=$("#customPerson").value;
+    const f=state.foods.find(x=>x.id===foodId); if(!f) return;
+    const requested=servings*customMultiplier(person);
+    const already=customMeal.filter(i=>i.foodId===foodId).reduce((t,i)=>t+i.servings*customMultiplier(i.person),0);
+    if(requested+already>f.qty){ alert(`Only ${f.qty} serving${f.qty===1?'':'s'} of ${f.name} available.`); return; }
+    if(person==="Everyone" && f.owner!=="Everyone" && f.owner!=="Both"){ alert(`${f.name} is marked for ${f.owner} only, so it cannot be assigned to everyone.`); return; }
+    if(person!=="Everyone" && f.owner!=="Everyone" && f.owner!=="Both" && f.owner!==person){ alert(`${f.name} is marked for ${f.owner} only.`); return; }
+    customMeal.push({foodId,servings:Number(servings.toFixed(2)),person});
+    $("#customServings").value=1; renderCustomMeal();
+  };
+  $("#clearCustomMeal").onclick=()=>{customMeal=[];renderCustomMeal();};
+  $("#useCustomMeal").onclick=()=>{
+    const usage={}; customMeal.forEach(i=>usage[i.foodId]=(usage[i.foodId]||0)+(i.servings*customMultiplier(i.person)));
+    const insufficient=Object.entries(usage).find(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); return !f||f.qty<amt;});
+    if(insufficient){ alert("Inventory changed and this meal no longer fits. Please adjust the meal."); renderCustomMealOptions(); return; }
+    applyUsage(usage);
+    customMeal=[]; renderCustomMeal();
+    $("#customMealTotals").textContent="Meal used. Inventory updated; anything that reached zero was added to Shopping List.";
+  };
 
   $("#makePlan").onclick=()=>{
     if(!state.people.length||!state.foods.length){$("#planResult").innerHTML='<p class="muted">Add people and food first.</p>';return;}
@@ -374,36 +482,8 @@
     }
   };
 
-  function renderAll(){renderPeople();renderFoods();renderShopping();}
+  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();}
   renderAll();
-
-  let deferredInstallPrompt = null;
-  const installBtn = document.getElementById("installApp");
-
-  window.addEventListener("beforeinstallprompt", (e) => {
-    e.preventDefault();
-    deferredInstallPrompt = e;
-    installBtn.classList.remove("hidden");
-  });
-
-  installBtn.addEventListener("click", async () => {
-    if (!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-    installBtn.classList.add("hidden");
-  });
-
-  window.addEventListener("appinstalled", () => {
-    installBtn.classList.add("hidden");
-  });
-
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js").catch(console.error);
-    });
-  }
-
 })();
 </script>
 </body>
