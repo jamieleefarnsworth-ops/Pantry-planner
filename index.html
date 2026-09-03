@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v4.4</title>
+<title>Pantry Planner v4.5</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,7 +47,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4.4</h1>
+      <h1>Pantry Planner v4.5</h1>
       <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
     </div>
     <button id="resetAll" class="btn danger" type="button">Reset all data</button>
@@ -71,7 +71,9 @@
         <label>Food name<input id="foodName" required placeholder="Chicken breast"></label>
         <label>Servings on hand<input id="foodQty" type="number" min="1" step="1" value="4" required></label>
         <label>Calories / serving<input id="foodCal" type="number" min="0" step="1" value="120" required></label>
-        <label>Protein g / serving<input id="foodProtein" type="number" min="0" step="1" value="20" required></label>
+        <label>Protein g / serving<input id="foodProtein" type="number" min="0" step="0.1" value="20" required></label>
+        <label>Carbs g / serving<input id="foodCarbs" type="number" min="0" step="0.1" value="0" required></label>
+        <label>Fat g / serving<input id="foodFat" type="number" min="0" step="0.1" value="0" required></label>
         <label>Category<select id="foodCategory"><option>Protein</option><option>Carb</option><option>Vegetable</option><option>Dairy</option><option>Snack</option><option>Condiment</option><option>Other</option></select></label>
         <label>Who can eat it?<select id="foodOwner"><option value="Everyone">Everyone</option></select></label>
         <label>Use soon?<select id="foodSoon"><option>No</option><option>Yes</option></select></label>
@@ -180,9 +182,9 @@
       {id:2,name:"Jackie",breakfast:450,lunch:450,dinner:450,snack:180,daily:1600,protein:85}
     ],
     foods:[
-      {id:1,name:"Chicken breast",qty:6,cal:110,protein:26,category:"Protein",owner:"Everyone",soon:"Yes"},
-      {id:2,name:"Red potatoes",qty:8,cal:110,protein:3,category:"Carb",owner:"Everyone",soon:"No"},
-      {id:3,name:"Oikos yogurt",qty:4,cal:80,protein:15,category:"Dairy",owner:"Everyone",soon:"Yes"}
+      {id:1,name:"Chicken breast",qty:6,cal:110,protein:26,carbs:0,fat:1,category:"Protein",owner:"Everyone",soon:"Yes"},
+      {id:2,name:"Red potatoes",qty:8,cal:110,protein:3,carbs:26,fat:0,category:"Carb",owner:"Everyone",soon:"No"},
+      {id:3,name:"Oikos yogurt",qty:4,cal:80,protein:15,carbs:7,fat:0,category:"Dairy",owner:"Everyone",soon:"Yes"}
     ],
     shopping:[],
     lastMealSignatures:[],
@@ -196,7 +198,7 @@
     try{
       const raw=localStorage.getItem(STORAGE_KEY);
       const loaded = raw ? JSON.parse(raw) : structuredClone(seed);
-      loaded.foods = (loaded.foods||[]).map(f=>({...f,owner:f.owner==="Both"?"Everyone":f.owner}));
+      loaded.foods = (loaded.foods||[]).map(f=>({...f,owner:f.owner==="Both"?"Everyone":f.owner,carbs:Number(f.carbs)||0,fat:Number(f.fat)||0}));
       loaded.shopping = loaded.shopping||[];
       loaded.people = loaded.people||[];
       loaded.lastMealSignatures = loaded.lastMealSignatures||[];
@@ -247,7 +249,7 @@
         <div class="between">
           <div>
             <h3>${esc(f.name)}</h3>
-            <p class="muted small">${f.qty} servings · ${f.cal} cal · ${f.protein}g protein each</p>
+            <p class="muted small">${f.qty} servings · ${f.cal} cal · P ${f.protein}g · C ${f.carbs||0}g · F ${f.fat||0}g each</p>
           </div>
           <div class="row">
             <button class="btn" data-edit-food="${f.id}">Edit</button>
@@ -270,7 +272,7 @@
     const f=state.foods.find(x=>x.id===id); if(!f) return;
     editingFoodId=id;
     $("#foodName").value=f.name; $("#foodQty").value=f.qty; $("#foodCal").value=f.cal;
-    $("#foodProtein").value=f.protein; $("#foodCategory").value=f.category; $("#foodOwner").value=f.owner; $("#foodSoon").value=f.soon;
+    $("#foodProtein").value=f.protein; $("#foodCarbs").value=f.carbs||0; $("#foodFat").value=f.fat||0; $("#foodCategory").value=f.category; $("#foodOwner").value=f.owner; $("#foodSoon").value=f.soon;
     $("#saveFoodBtn").textContent="Save changes";
     $("#cancelEditBtn").classList.remove("hidden");
     $("#inventoryMsg").textContent=`Editing ${f.name}`;
@@ -279,7 +281,7 @@
   function cancelEdit(){
     editingFoodId=null;
     $("#inventoryForm").reset();
-    $("#foodQty").value=4; $("#foodCal").value=120; $("#foodProtein").value=20;
+    $("#foodQty").value=4; $("#foodCal").value=120; $("#foodProtein").value=20; $("#foodCarbs").value=0; $("#foodFat").value=0;
     syncOwners();
     $("#saveFoodBtn").textContent="Add food";
     $("#cancelEditBtn").classList.add("hidden");
@@ -295,6 +297,8 @@
       qty:Math.max(1,Math.floor(num($("#foodQty").value,1))),
       cal:num($("#foodCal").value),
       protein:num($("#foodProtein").value),
+      carbs:num($("#foodCarbs").value),
+      fat:num($("#foodFat").value),
       category:$("#foodCategory").value,
       owner:$("#foodOwner").value,
       soon:$("#foodSoon").value
@@ -342,7 +346,7 @@
     return a.slice(0,6);
   }
   function buildPersonMeal(person,type,priority,seedv){
-    const limit=mealLimit(person,type); let remaining=limit,totalCal=0,totalProtein=0,items=[];
+    const limit=mealLimit(person,type); let remaining=limit,totalCal=0,totalProtein=0,totalCarbs=0,totalFat=0,items=[];
     for(const f of choose(person,priority,seedv)){
       if(f.cal<=0||f.qty<1||f.cal>remaining) continue;
       const maxWhole=Math.min(Math.floor(f.qty),Math.floor(remaining/f.cal)); if(maxWhole<1) continue;
@@ -351,11 +355,11 @@
       if(variation===1&&maxWhole>=2) servings=2;
       if(variation===2&&maxWhole>=3) servings=3;
       servings=Math.min(servings,maxWhole);
-      const c=Math.round(servings*f.cal),pr=Math.round(servings*f.protein);
-      items.push({food:f,servings,c,pr}); totalCal+=c; totalProtein+=pr; remaining=limit-totalCal;
+      const c=Math.round(servings*f.cal),pr=servings*f.protein,cb=servings*(f.carbs||0),ft=servings*(f.fat||0);
+      items.push({food:f,servings,c,pr,cb,ft}); totalCal+=c; totalProtein+=pr; totalCarbs+=cb; totalFat+=ft; remaining=limit-totalCal;
       if(items.length>=3||remaining<=0) break;
     }
-    return {person,limit,items,totalCal,totalProtein};
+    return {person,limit,items,totalCal,totalProtein,totalCarbs,totalFat};
   }
   function signature(r){return r.map(x=>x.person.name+":"+x.items.map(i=>i.food.id+"x"+i.servings).join("-")).join("|");}
   function generateDifferent(type,priority){
@@ -393,7 +397,7 @@
       <div class="between"><div><h2>${esc(type)} suggestion</h2><p class="muted small">Each included item uses at least 1 full serving.</p></div><button id="useMeal" class="btn primary">Use this meal</button></div>
       ${result.map(r=>`<div class="meal-person"><h3>${esc(r.person.name)}</h3><p class="muted small">Limit ${r.limit} cal</p>
       ${r.items.length?r.items.map(i=>`<div class="meal-line"><span>${i.servings} serving${i.servings===1?"":"s"} ${esc(i.food.name)}</span><span>${i.c} cal</span></div>`).join(""):'<p class="muted small">No full-serving combination fits.</p>'}
-      <strong>${r.totalCal} cal · ${r.totalProtein}g protein</strong></div>`).join("")}`;
+      <strong>${r.totalCal} cal · P ${Math.round(r.totalProtein)}g · C ${Math.round(r.totalCarbs)}g · F ${Math.round(r.totalFat)}g</strong></div>`).join("")}`;
     $("#useMeal").onclick=()=>{
       const usage={}; result.forEach(r=>r.items.forEach(i=>usage[i.food.id]=(usage[i.food.id]||0)+i.servings));
       applyUsage(usage);
@@ -460,7 +464,7 @@
     const box=$("#customMealItems"), totals=$("#customMealTotals");
     if(!customMeal.length){
       box.innerHTML='<p class="muted small">No ingredients added yet.</p>';
-      totals.textContent='0 calories · 0g protein';
+      totals.textContent='0 calories · P 0g · C 0g · F 0g';
       $("#useCustomMeal").disabled=true;
       return;
     }
@@ -469,26 +473,30 @@
       const people=customPeopleForItem(i), mult=customMultiplier(i), totalServings=i.servings*mult;
       const names=people.map(esc).join(', ');
       const servingText=`${i.servings} serving${i.servings===1?'':'s'} each · ${names}`;
-      return `<div class="card between" style="margin-bottom:8px"><div><strong>${esc(f.name)}</strong><div class="muted small">${servingText}</div></div><div class="row"><span>${Math.round(f.cal*totalServings)} cal · ${Math.round(f.protein*totalServings)}g protein</span><button class="btn danger" data-remove-custom="${idx}">Remove</button></div></div>`;
+      return `<div class="card between" style="margin-bottom:8px"><div><strong>${esc(f.name)}</strong><div class="muted small">${servingText}</div></div><div class="row"><span>${Math.round(f.cal*totalServings)} cal · P ${Math.round(f.protein*totalServings)}g · C ${Math.round((f.carbs||0)*totalServings)}g · F ${Math.round((f.fat||0)*totalServings)}g</span><button class="btn danger" data-remove-custom="${idx}">Remove</button></div></div>`;
     }).join('');
     $$('[data-remove-custom]').forEach(b=>b.onclick=()=>{customMeal.splice(Number(b.dataset.removeCustom),1);renderCustomMeal();});
     const cal=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.cal*i.servings*customMultiplier(i):0)},0);
     const protein=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.protein*i.servings*customMultiplier(i):0)},0);
+    const carbs=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?(f.carbs||0)*i.servings*customMultiplier(i):0)},0);
+    const fat=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?(f.fat||0)*i.servings*customMultiplier(i):0)},0);
 
     const perPerson={};
     customMeal.forEach(i=>{
       const f=state.foods.find(x=>x.id===i.foodId);
       if(!f) return;
       customPeopleForItem(i).forEach(name=>{
-        if(!perPerson[name]) perPerson[name]={cal:0,protein:0};
+        if(!perPerson[name]) perPerson[name]={cal:0,protein:0,carbs:0,fat:0};
         perPerson[name].cal+=f.cal*i.servings;
         perPerson[name].protein+=f.protein*i.servings;
+        perPerson[name].carbs+=(f.carbs||0)*i.servings;
+        perPerson[name].fat+=(f.fat||0)*i.servings;
       });
     });
     const personRows=householdNames().filter(name=>perPerson[name]).map(name=>
-      `<div class="between" style="margin-top:6px"><strong>${esc(name)}</strong><span>${Math.round(perPerson[name].cal)} cal · ${Math.round(perPerson[name].protein)}g protein</span></div>`
+      `<div class="between" style="margin-top:6px"><strong>${esc(name)}</strong><span>${Math.round(perPerson[name].cal)} cal · P ${Math.round(perPerson[name].protein)}g · C ${Math.round(perPerson[name].carbs)}g · F ${Math.round(perPerson[name].fat)}g</span></div>`
     ).join('');
-    totals.innerHTML=`<div><strong>Meal total:</strong> ${Math.round(cal)} calories · ${Math.round(protein)}g protein</div>${personRows?`<div style="margin-top:10px"><div class="muted small">Per person</div>${personRows}</div>`:''}`;
+    totals.innerHTML=`<div><strong>Meal total:</strong> ${Math.round(cal)} calories · P ${Math.round(protein)}g · C ${Math.round(carbs)}g · F ${Math.round(fat)}g</div>${personRows?`<div style="margin-top:10px"><div class="muted small">Per person</div>${personRows}</div>`:''}`;
     $("#useCustomMeal").disabled=false;
   }
 
