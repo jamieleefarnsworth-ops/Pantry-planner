@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v4.5</title>
+<title>Pantry Planner v4.6</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,7 +47,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4.5</h1>
+      <h1>Pantry Planner v4.6</h1>
       <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
     </div>
     <button id="resetAll" class="btn danger" type="button">Reset all data</button>
@@ -249,7 +249,7 @@
         <div class="between">
           <div>
             <h3>${esc(f.name)}</h3>
-            <p class="muted small">${f.qty} servings · ${f.cal} cal · P ${f.protein}g · C ${f.carbs||0}g · F ${f.fat||0}g each</p>
+            <p class="muted small">${f.qty} servings · ${f.cal} cal · Protein ${f.protein}g · Carbs ${f.carbs||0}g · Fat ${f.fat||0}g each</p>
           </div>
           <div class="row">
             <button class="btn" data-edit-food="${f.id}">Edit</button>
@@ -397,7 +397,7 @@
       <div class="between"><div><h2>${esc(type)} suggestion</h2><p class="muted small">Each included item uses at least 1 full serving.</p></div><button id="useMeal" class="btn primary">Use this meal</button></div>
       ${result.map(r=>`<div class="meal-person"><h3>${esc(r.person.name)}</h3><p class="muted small">Limit ${r.limit} cal</p>
       ${r.items.length?r.items.map(i=>`<div class="meal-line"><span>${i.servings} serving${i.servings===1?"":"s"} ${esc(i.food.name)}</span><span>${i.c} cal</span></div>`).join(""):'<p class="muted small">No full-serving combination fits.</p>'}
-      <strong>${r.totalCal} cal · P ${Math.round(r.totalProtein)}g · C ${Math.round(r.totalCarbs)}g · F ${Math.round(r.totalFat)}g</strong></div>`).join("")}`;
+      <strong>${r.totalCal} cal · Protein ${Math.round(r.totalProtein)}g · Carbs ${Math.round(r.totalCarbs)}g · Fat ${Math.round(r.totalFat)}g</strong></div>`).join("")}`;
     $("#useMeal").onclick=()=>{
       const usage={}; result.forEach(r=>r.items.forEach(i=>usage[i.food.id]=(usage[i.food.id]||0)+i.servings));
       applyUsage(usage);
@@ -464,7 +464,7 @@
     const box=$("#customMealItems"), totals=$("#customMealTotals");
     if(!customMeal.length){
       box.innerHTML='<p class="muted small">No ingredients added yet.</p>';
-      totals.textContent='0 calories · P 0g · C 0g · F 0g';
+      totals.textContent='0 calories · Protein 0g · Carbs 0g · Fat 0g';
       $("#useCustomMeal").disabled=true;
       return;
     }
@@ -473,7 +473,7 @@
       const people=customPeopleForItem(i), mult=customMultiplier(i), totalServings=i.servings*mult;
       const names=people.map(esc).join(', ');
       const servingText=`${i.servings} serving${i.servings===1?'':'s'} each · ${names}`;
-      return `<div class="card between" style="margin-bottom:8px"><div><strong>${esc(f.name)}</strong><div class="muted small">${servingText}</div></div><div class="row"><span>${Math.round(f.cal*totalServings)} cal · P ${Math.round(f.protein*totalServings)}g · C ${Math.round((f.carbs||0)*totalServings)}g · F ${Math.round((f.fat||0)*totalServings)}g</span><button class="btn danger" data-remove-custom="${idx}">Remove</button></div></div>`;
+      return `<div class="card between" style="margin-bottom:8px"><div><strong>${esc(f.name)}</strong><div class="muted small">${servingText}</div></div><div class="row"><span>${Math.round(f.cal*totalServings)} cal · Protein ${Math.round(f.protein*totalServings)}g · Carbs ${Math.round((f.carbs||0)*totalServings)}g · Fat ${Math.round((f.fat||0)*totalServings)}g</span><button class="btn danger" data-remove-custom="${idx}">Remove</button></div></div>`;
     }).join('');
     $$('[data-remove-custom]').forEach(b=>b.onclick=()=>{customMeal.splice(Number(b.dataset.removeCustom),1);renderCustomMeal();});
     const cal=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.cal*i.servings*customMultiplier(i):0)},0);
@@ -494,9 +494,9 @@
       });
     });
     const personRows=householdNames().filter(name=>perPerson[name]).map(name=>
-      `<div class="between" style="margin-top:6px"><strong>${esc(name)}</strong><span>${Math.round(perPerson[name].cal)} cal · P ${Math.round(perPerson[name].protein)}g · C ${Math.round(perPerson[name].carbs)}g · F ${Math.round(perPerson[name].fat)}g</span></div>`
+      `<div class="between" style="margin-top:6px"><strong>${esc(name)}</strong><span>${Math.round(perPerson[name].cal)} cal · Protein ${Math.round(perPerson[name].protein)}g · Carbs ${Math.round(perPerson[name].carbs)}g · Fat ${Math.round(perPerson[name].fat)}g</span></div>`
     ).join('');
-    totals.innerHTML=`<div><strong>Meal total:</strong> ${Math.round(cal)} calories · P ${Math.round(protein)}g · C ${Math.round(carbs)}g · F ${Math.round(fat)}g</div>${personRows?`<div style="margin-top:10px"><div class="muted small">Per person</div>${personRows}</div>`:''}`;
+    totals.innerHTML=`<div><strong>Meal total:</strong> ${Math.round(cal)} calories · Protein ${Math.round(protein)}g · Carbs ${Math.round(carbs)}g · Fat ${Math.round(fat)}g</div>${personRows?`<div style="margin-top:10px"><div class="muted small">Per person</div>${personRows}</div>`:''}`;
     $("#useCustomMeal").disabled=false;
   }
 
