@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#111315" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="manifest" href="manifest.webmanifest" />
+<title>Pantry Planner v4</title>
+<style>
+  :root{
+    --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
+    --text:#f3f5f7; --muted:#aab2bd; --accent:#4f8cff; --danger:#d95c5c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  h1,h2,h3,p{margin-top:0}
+  .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  button,input,select{font:inherit}
+  .btn{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:10px;padding:10px 14px;min-height:44px;cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:white;font-weight:700}
+  .btn.danger{border-color:var(--danger);color:#ffb2b2}
+  .btn.active{background:#23324a;border-color:var(--accent)}
+  .panel,.card{border:1px solid var(--border);background:var(--panel);border-radius:14px;padding:16px}
+  .card{background:var(--card)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}
+  label{display:block;font-size:14px}
+  input,select{width:100%;margin-top:5px;border:1px solid var(--border);border-radius:10px;background:#14171b;color:var(--text);padding:11px 12px;min-height:44px}
+  .muted{color:var(--muted)}
+  .hidden{display:none!important}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .between{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .badge{display:inline-block;border:1px solid var(--border);padding:3px 8px;border-radius:999px;font-size:12px;margin:4px 4px 0 0}
+  .meal-person{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
+  .meal-line{display:flex;justify-content:space-between;gap:16px;padding:5px 0}
+  .status{min-height:20px;margin-top:8px}
+  .small{font-size:13px}
+  @media(max-width:600px){.wrap{padding:10px}.btn{flex:1}.tabs .btn{flex:0 1 auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="between">
+    <div>
+      <h1>Pantry Planner v4</h1>
+      <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
+    </div>
+    <div class="row"><button id="installApp" class="btn primary hidden" type="button">Install app</button><button id="resetAll" class="btn danger" type="button">Reset all data</button></div>
+  </div>
+
+  <div class="tabs">
+    <button class="btn active" data-tab="inventory">Inventory</button>
+    <button class="btn" data-tab="household">Household</button>
+    <button class="btn" data-tab="meal">Make a Meal</button>
+    <button class="btn" data-tab="plan">Meal Plan</button>
+    <button class="btn" data-tab="shopping">Shopping List</button>
+  </div>
+
+  <section id="inventory" class="tab-panel">
+    <div class="panel">
+      <div class="between">
+        <div><h2>Food inventory</h2><p class="muted">Add or edit ingredients you have on hand.</p></div>
+        <span id="inventoryCount" class="badge">0 items</span>
+      </div>
+      <form id="inventoryForm" class="grid">
+        <label>Food name<input id="foodName" required placeholder="Chicken breast"></label>
+        <label>Servings on hand<input id="foodQty" type="number" min="1" step="1" value="4" required></label>
+        <label>Calories / serving<input id="foodCal" type="number" min="0" step="1" value="120" required></label>
+        <label>Protein g / serving<input id="foodProtein" type="number" min="0" step="1" value="20" required></label>
+        <label>Category<select id="foodCategory"><option>Protein</option><option>Carb</option><option>Vegetable</option><option>Dairy</option><option>Snack</option><option>Condiment</option><option>Other</option></select></label>
+        <label>Who can eat it?<select id="foodOwner"><option value="Both">Both</option></select></label>
+        <label>Use soon?<select id="foodSoon"><option>No</option><option>Yes</option></select></label>
+        <div class="row" style="align-self:end">
+          <button id="saveFoodBtn" class="btn primary" type="submit">Add food</button>
+          <button id="cancelEditBtn" class="btn hidden" type="button">Cancel edit</button>
+        </div>
+      </form>
+      <div id="inventoryMsg" class="status muted small"></div>
+    </div>
+    <div id="inventoryList" class="cards"></div>
+  </section>
+
+  <section id="household" class="tab-panel hidden">
+    <div class="panel">
+      <h2>Household profiles</h2>
+      <p class="muted">Set calorie limits by meal so portions can be scaled automatically.</p>
+      <form id="personForm" class="grid">
+        <label>Name<input id="personName" required placeholder="Jamie"></label>
+        <label>Breakfast max<input id="personBreakfast" type="number" min="0" value="500"></label>
+        <label>Lunch max<input id="personLunch" type="number" min="0" value="500"></label>
+        <label>Dinner max<input id="personDinner" type="number" min="0" value="500"></label>
+        <label>Snack max<input id="personSnack" type="number" min="0" value="200"></label>
+        <label>Daily target<input id="personDaily" type="number" min="0" value="1800"></label>
+        <label>Protein target (g)<input id="personProtein" type="number" min="0" value="100"></label>
+        <div style="align-self:end"><button class="btn primary" type="submit">Add person</button></div>
+      </form>
+      <div id="personMsg" class="status muted small"></div>
+    </div>
+    <div id="peopleList" class="cards"></div>
+  </section>
+
+  <section id="meal" class="tab-panel hidden">
+    <div class="panel">
+      <div class="grid">
+        <label>Meal<select id="mealType"><option>Breakfast</option><option>Lunch</option><option selected>Dinner</option><option>Snack</option></select></label>
+        <label>Priority<select id="mealPriority"><option value="balanced">Balanced</option><option value="protein">Highest protein</option><option value="use-soon">Use food soon</option><option value="stretch">Stretch inventory</option></select></label>
+        <div style="align-self:end"><button id="generateMeal" class="btn primary" type="button">Generate meal</button></div>
+      </div>
+      <p class="muted small">Every included ingredient uses at least 1 full serving. Press again for a different valid meal.</p>
+    </div>
+    <div id="mealResult" class="panel" style="margin-top:12px">
+      <h2>Generated meal</h2><p class="muted">Generate a meal to see a suggestion.</p>
+    </div>
+  </section>
+
+  <section id="plan" class="tab-panel hidden">
+    <div class="panel between">
+      <div><h2>Simple 3-day meal plan</h2><p class="muted">Planning does not deduct inventory.</p></div>
+      <button id="makePlan" class="btn primary" type="button">Build 3-day plan</button>
+    </div>
+    <div id="planResult" class="cards"></div>
+  </section>
+
+  <section id="shopping" class="tab-panel hidden">
+    <div class="panel">
+      <h2>Shopping list</h2>
+      <form id="shoppingForm" class="row">
+        <input id="shoppingInput" style="flex:1;min-width:180px;margin-top:0" placeholder="Milk" required>
+        <button class="btn primary" type="submit">Add</button>
+      </form>
+    </div>
+    <div id="shoppingList" style="margin-top:12px"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const STORAGE_KEY = "pantryPlannerV4";
+  const seed = {
+    people:[
+      {id:1,name:"Jamie",breakfast:500,lunch:500,dinner:500,snack:200,daily:1800,protein:100},
+      {id:2,name:"Jackie",breakfast:450,lunch:450,dinner:450,snack:180,daily:1600,protein:85}
+    ],
+    foods:[
+      {id:1,name:"Chicken breast",qty:6,cal:110,protein:26,category:"Protein",owner:"Both",soon:"Yes"},
+      {id:2,name:"Red potatoes",qty:8,cal:110,protein:3,category:"Carb",owner:"Both",soon:"No"},
+      {id:3,name:"Oikos yogurt",qty:4,cal:80,protein:15,category:"Dairy",owner:"Both",soon:"Yes"}
+    ],
+    shopping:[],
+    lastMealSignatures:[],
+    generateCount:0
+  };
+
+  let state = load();
+  let editingFoodId = null;
+
+  function load(){
+    try{
+      const raw=localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : structuredClone(seed);
+    }catch(e){ return JSON.parse(JSON.stringify(seed)); }
+  }
+  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const esc = v => String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+  const num = (v,min=0,max=999999) => Math.max(min,Math.min(max,Number(v)||0));
+
+  $$(".tabs [data-tab]").forEach(btn=>btn.onclick=()=>{
+    $$(".tabs [data-tab]").forEach(b=>b.classList.toggle("active",b===btn));
+    $$(".tab-panel").forEach(p=>p.classList.add("hidden"));
+    $("#"+btn.dataset.tab).classList.remove("hidden");
+  });
+
+  function syncOwners(){
+    const sel=$("#foodOwner"), cur=sel.value;
+    sel.innerHTML='<option value="Both">Both</option>'+state.people.map(p=>`<option value="${esc(p.name)}">${esc(p.name)} only</option>`).join("");
+    if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  }
+
+  function renderPeople(){
+    const box=$("#peopleList");
+    box.innerHTML=state.people.length ? state.people.map(p=>`
+      <div class="card">
+        <div class="between">
+          <div><h3>${esc(p.name)}</h3><p class="muted small">Daily ${p.daily} cal · ${p.protein}g protein</p></div>
+          <button class="btn danger" data-remove-person="${p.id}">Remove</button>
+        </div>
+        <div class="small">Breakfast ${p.breakfast} · Lunch ${p.lunch} · Dinner ${p.dinner} · Snack ${p.snack}</div>
+      </div>`).join("") : '<p class="muted">No household members yet.</p>';
+    $$("[data-remove-person]").forEach(b=>b.onclick=()=>{
+      state.people=state.people.filter(p=>p.id!==Number(b.dataset.removePerson));
+      save(); renderPeople(); syncOwners();
+    });
+    syncOwners();
+  }
+
+  function renderFoods(){
+    $("#inventoryCount").textContent=`${state.foods.length} item${state.foods.length===1?"":"s"}`;
+    $("#inventoryList").innerHTML=state.foods.length ? state.foods.map(f=>`
+      <div class="card">
+        <div class="between">
+          <div>
+            <h3>${esc(f.name)}</h3>
+            <p class="muted small">${f.qty} servings · ${f.cal} cal · ${f.protein}g protein each</p>
+          </div>
+          <div class="row">
+            <button class="btn" data-edit-food="${f.id}">Edit</button>
+            <button class="btn danger" data-remove-food="${f.id}">Remove</button>
+          </div>
+        </div>
+        <span class="badge">${esc(f.category)}</span><span class="badge">${esc(f.owner)}</span>${f.soon==="Yes"?'<span class="badge">Use soon</span>':""}
+      </div>`).join("") : '<p class="muted">No food entered yet.</p>';
+
+    $$("[data-edit-food]").forEach(b=>b.onclick=()=>startEdit(Number(b.dataset.editFood)));
+    $$("[data-remove-food]").forEach(b=>b.onclick=()=>{
+      state.foods=state.foods.filter(f=>f.id!==Number(b.dataset.removeFood));
+      if(editingFoodId===Number(b.dataset.removeFood)) cancelEdit();
+      save(); renderFoods();
+    });
+  }
+
+  function startEdit(id){
+    const f=state.foods.find(x=>x.id===id); if(!f) return;
+    editingFoodId=id;
+    $("#foodName").value=f.name; $("#foodQty").value=f.qty; $("#foodCal").value=f.cal;
+    $("#foodProtein").value=f.protein; $("#foodCategory").value=f.category; $("#foodOwner").value=f.owner; $("#foodSoon").value=f.soon;
+    $("#saveFoodBtn").textContent="Save changes";
+    $("#cancelEditBtn").classList.remove("hidden");
+    $("#inventoryMsg").textContent=`Editing ${f.name}`;
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  function cancelEdit(){
+    editingFoodId=null;
+    $("#inventoryForm").reset();
+    $("#foodQty").value=4; $("#foodCal").value=120; $("#foodProtein").value=20;
+    syncOwners();
+    $("#saveFoodBtn").textContent="Add food";
+    $("#cancelEditBtn").classList.add("hidden");
+    $("#inventoryMsg").textContent="";
+  }
+  $("#cancelEditBtn").onclick=cancelEdit;
+
+  $("#inventoryForm").onsubmit=e=>{
+    e.preventDefault();
+    const obj={
+      id: editingFoodId ?? Date.now(),
+      name:$("#foodName").value.trim(),
+      qty:Math.max(1,Math.floor(num($("#foodQty").value,1))),
+      cal:num($("#foodCal").value),
+      protein:num($("#foodProtein").value),
+      category:$("#foodCategory").value,
+      owner:$("#foodOwner").value,
+      soon:$("#foodSoon").value
+    };
+    if(!obj.name) return;
+    if(editingFoodId){
+      const i=state.foods.findIndex(f=>f.id===editingFoodId);
+      if(i>=0) state.foods[i]=obj;
+      $("#inventoryMsg").textContent="Ingredient updated.";
+    }else{
+      state.foods.push(obj);
+      $("#inventoryMsg").textContent="Ingredient added.";
+    }
+    save(); cancelEdit(); renderFoods();
+  };
+
+  $("#personForm").onsubmit=e=>{
+    e.preventDefault();
+    const name=$("#personName").value.trim(); if(!name) return;
+    state.people.push({
+      id:Date.now(),name,
+      breakfast:num($("#personBreakfast").value),lunch:num($("#personLunch").value),
+      dinner:num($("#personDinner").value),snack:num($("#personSnack").value),
+      daily:num($("#personDaily").value),protein:num($("#personProtein").value)
+    });
+    save(); e.target.reset(); $("#personMsg").textContent=`Added ${name}.`; renderPeople();
+  };
+
+  function mealLimit(p,type){ return p[type.toLowerCase()] || 500; }
+  function eligible(person){ return state.foods.filter(f=>f.qty>=1&&(f.owner==="Both"||f.owner===person.name)); }
+  function score(f,priority){
+    if(priority==="protein") return f.protein*10+(f.soon==="Yes"?2:0);
+    if(priority==="use-soon") return (f.soon==="Yes"?100:0)+f.protein;
+    if(priority==="stretch") return f.qty*10+f.protein;
+    return ({Protein:50,Vegetable:40,Carb:30,Dairy:20,Other:10,Snack:5,Condiment:2}[f.category]||0)+f.protein;
+  }
+  function shuffle(a,seed){
+    a=a.slice(); let x=(seed+1)*9301+49297;
+    for(let i=a.length-1;i>0;i--){x=(x*233280+49297)%233280; const j=Math.floor((x/233280)*(i+1)); [a[i],a[j]]=[a[j],a[i]];}
+    return a;
+  }
+  function choose(person,priority,seedv){
+    const a=shuffle(eligible(person).map(f=>({...f,_score:score(f,priority)})),seedv+person.id);
+    a.sort((x,y)=>Math.abs(y._score-x._score)>15?y._score-x._score:0);
+    return a.slice(0,6);
+  }
+  function buildPersonMeal(person,type,priority,seedv){
+    const limit=mealLimit(person,type); let remaining=limit,totalCal=0,totalProtein=0,items=[];
+    for(const f of choose(person,priority,seedv)){
+      if(f.cal<=0||f.qty<1||f.cal>remaining) continue;
+      const maxWhole=Math.min(Math.floor(f.qty),Math.floor(remaining/f.cal)); if(maxWhole<1) continue;
+      let servings=1;
+      const variation=(seedv+f.id+person.id)%3;
+      if(variation===1&&maxWhole>=2) servings=2;
+      if(variation===2&&maxWhole>=3) servings=3;
+      servings=Math.min(servings,maxWhole);
+      const c=Math.round(servings*f.cal),pr=Math.round(servings*f.protein);
+      items.push({food:f,servings,c,pr}); totalCal+=c; totalProtein+=pr; remaining=limit-totalCal;
+      if(items.length>=3||remaining<=0) break;
+    }
+    return {person,limit,items,totalCal,totalProtein};
+  }
+  function signature(r){return r.map(x=>x.person.name+":"+x.items.map(i=>i.food.id+"x"+i.servings).join("-")).join("|");}
+  function generateDifferent(type,priority){
+    let attempts=0,r=[],sig="";
+    do{
+      const seedv=state.generateCount+attempts+1;
+      r=state.people.map(p=>buildPersonMeal(p,type,priority,seedv));
+      sig=signature(r); attempts++;
+    }while(state.lastMealSignatures.includes(sig)&&attempts<20);
+    state.generateCount+=attempts;
+    state.lastMealSignatures.push(sig);
+    if(state.lastMealSignatures.length>10) state.lastMealSignatures.shift();
+    save();
+    return r;
+  }
+  function renderMeal(result,type){
+    if(!result.length){$("#mealResult").innerHTML='<h2>Generated meal</h2><p class="muted">Add household members first.</p>';return;}
+    $("#mealResult").innerHTML=`
+      <div class="between"><div><h2>${esc(type)} suggestion</h2><p class="muted small">Each included item uses at least 1 full serving.</p></div><button id="useMeal" class="btn primary">Use this meal</button></div>
+      ${result.map(r=>`<div class="meal-person"><h3>${esc(r.person.name)}</h3><p class="muted small">Limit ${r.limit} cal</p>
+      ${r.items.length?r.items.map(i=>`<div class="meal-line"><span>${i.servings} serving${i.servings===1?"":"s"} ${esc(i.food.name)}</span><span>${i.c} cal</span></div>`).join(""):'<p class="muted small">No full-serving combination fits.</p>'}
+      <strong>${r.totalCal} cal · ${r.totalProtein}g protein</strong></div>`).join("")}`;
+    $("#useMeal").onclick=()=>{
+      const usage={}; result.forEach(r=>r.items.forEach(i=>usage[i.food.id]=(usage[i.food.id]||0)+i.servings));
+      Object.entries(usage).forEach(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); if(f) f.qty=Math.max(0,f.qty-amt);});
+      save(); renderFoods(); $("#useMeal").disabled=true; $("#useMeal").textContent="Inventory updated";
+    };
+  }
+
+  $("#generateMeal").onclick=()=>{
+    const type=$("#mealType").value,priority=$("#mealPriority").value;
+    renderMeal(generateDifferent(type,priority),type); $("#generateMeal").textContent="Try another";
+  };
+  $("#mealType").onchange=$("#mealPriority").onchange=()=>{state.lastMealSignatures=[];$("#generateMeal").textContent="Generate meal";save();};
+
+  $("#makePlan").onclick=()=>{
+    if(!state.people.length||!state.foods.length){$("#planResult").innerHTML='<p class="muted">Add people and food first.</p>';return;}
+    const types=["Breakfast","Lunch","Dinner"];
+    $("#planResult").innerHTML=[1,2,3].map(day=>`<div class="card"><h3>Day ${day}</h3>${types.map((t,i)=>{
+      const m=buildPersonMeal(state.people[0],t,"balanced",day*10+i);
+      return `<p><strong>${t}</strong><br><span class="muted small">${m.items.map(x=>`${x.servings}× ${esc(x.food.name)}`).join(", ")||"No full-serving combination"}</span></p>`;
+    }).join("")}</div>`).join("");
+  };
+
+  $("#shoppingForm").onsubmit=e=>{
+    e.preventDefault(); const name=$("#shoppingInput").value.trim(); if(!name)return;
+    state.shopping.push({id:Date.now(),name}); $("#shoppingInput").value=""; save(); renderShopping();
+  };
+  function renderShopping(){
+    $("#shoppingList").innerHTML=state.shopping.length?state.shopping.map(i=>`<div class="card between" style="margin-bottom:8px"><span>${esc(i.name)}</span><button class="btn" data-shop="${i.id}">Done</button></div>`).join(""):'<p class="muted">Nothing on the shopping list.</p>';
+    $$("[data-shop]").forEach(b=>b.onclick=()=>{state.shopping=state.shopping.filter(i=>i.id!==Number(b.dataset.shop));save();renderShopping();});
+  }
+
+  $("#resetAll").onclick=()=>{
+    if(confirm("Reset Pantry Planner and erase saved data on this device?")){
+      state=JSON.parse(JSON.stringify(seed)); editingFoodId=null; save(); renderAll(); cancelEdit(); alert("Pantry Planner has been reset.");
+    }
+  };
+
+  function renderAll(){renderPeople();renderFoods();renderShopping();}
+  renderAll();
+
+  let deferredInstallPrompt = null;
+  const installBtn = document.getElementById("installApp");
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    installBtn.classList.remove("hidden");
+  });
+
+  installBtn.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    installBtn.classList.add("hidden");
+  });
+
+  window.addEventListener("appinstalled", () => {
+    installBtn.classList.add("hidden");
+  });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(console.error);
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
