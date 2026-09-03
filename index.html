@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v4.1</title>
+<title>Pantry Planner v4.3</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -34,6 +34,12 @@
   .meal-line{display:flex;justify-content:space-between;gap:16px;padding:5px 0}
   .status{min-height:20px;margin-top:8px}
   .small{font-size:13px}
+  .people-picker{margin-top:5px;border:1px solid var(--border);border-radius:10px;background:#14171b;padding:10px 12px}
+  .people-picker-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:8px}
+  .person-check{display:flex;align-items:center;gap:8px;min-height:36px;font-size:15px}
+  .person-check input{width:20px;height:20px;min-height:0;margin:0;accent-color:var(--accent)}
+  .picker-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .picker-actions .btn{min-height:38px;padding:7px 10px;font-size:13px}
   @media(max-width:600px){.wrap{padding:10px}.btn{flex:1}.tabs .btn{flex:0 1 auto}}
 </style>
 </head>
@@ -41,7 +47,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4.1</h1>
+      <h1>Pantry Planner v4.3</h1>
       <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
     </div>
     <button id="resetAll" class="btn danger" type="button">Reset all data</button>
@@ -120,7 +126,16 @@
         <div class="grid">
           <label>Ingredient<select id="customFood"></select></label>
           <label>Servings<input id="customServings" type="number" min="0.25" step="0.25" value="1"></label>
-          <label>For<select id="customPerson"></select></label>
+          <div>
+            <label>Who is eating?</label>
+            <div id="customPeoplePicker" class="people-picker">
+              <div id="customPeopleList" class="people-picker-list"></div>
+              <div class="picker-actions">
+                <button id="selectAllCustomPeople" class="btn" type="button">Select everyone</button>
+                <button id="clearCustomPeople" class="btn" type="button">Clear</button>
+              </div>
+            </div>
+          </div>
           <div style="align-self:end"><button id="addCustomItem" class="btn primary" type="button">Add to meal</button></div>
         </div>
         <div id="customMealItems" style="margin-top:12px"></div>
@@ -220,7 +235,7 @@
       </div>`).join("") : '<p class="muted">No household members yet.</p>';
     $$("[data-remove-person]").forEach(b=>b.onclick=()=>{
       state.people=state.people.filter(p=>p.id!==Number(b.dataset.removePerson));
-      save(); renderPeople(); syncOwners();
+      save(); renderPeople(); syncOwners(); renderCustomMealOptions();
     });
     syncOwners();
   }
@@ -393,19 +408,53 @@
   $("#mealType").onchange=$("#mealPriority").onchange=()=>{state.lastMealSignatures=[];$("#generateMeal").textContent="Generate meal";save();};
 
   let customMeal=[];
+  let customSelectedPeople=null;
+
+  function householdNames(){ return state.people.map(p=>p.name); }
+
+  function ensureCustomPeopleSelection(){
+    const names=householdNames();
+    if(customSelectedPeople===null) customSelectedPeople=[...names];
+    else customSelectedPeople=customSelectedPeople.filter(name=>names.includes(name));
+  }
+
+  function selectedCustomPeople(){
+    return $$("#customPeopleList input[type=checkbox]:checked").map(cb=>cb.value);
+  }
+
+  function renderCustomPeoplePicker(){
+    const box=$("#customPeopleList"); if(!box) return;
+    ensureCustomPeopleSelection();
+    const names=householdNames();
+    if(!names.length){
+      box.innerHTML='<span class="muted small">Add household members first.</span>';
+      $("#selectAllCustomPeople").disabled=true;
+      $("#clearCustomPeople").disabled=true;
+      return;
+    }
+    $("#selectAllCustomPeople").disabled=false;
+    $("#clearCustomPeople").disabled=false;
+    box.innerHTML=names.map(name=>`<label class="person-check"><input type="checkbox" value="${esc(name)}" ${customSelectedPeople.includes(name)?'checked':''}><span>${esc(name)}</span></label>`).join('');
+    $$("#customPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{customSelectedPeople=selectedCustomPeople();});
+  }
 
   function renderCustomMealOptions(){
-    const foodSel=$("#customFood"), personSel=$("#customPerson");
-    if(!foodSel||!personSel) return;
-    const currentFood=foodSel.value, currentPerson=personSel.value;
+    const foodSel=$("#customFood");
+    if(!foodSel) return;
+    const currentFood=foodSel.value;
     const foods=state.foods.filter(f=>f.qty>0);
     foodSel.innerHTML=foods.length?foods.map(f=>`<option value="${f.id}">${esc(f.name)} (${f.qty} servings)</option>`).join(""):'<option value="">No inventory available</option>';
     if([...foodSel.options].some(o=>o.value===currentFood)) foodSel.value=currentFood;
-    personSel.innerHTML='<option value="Everyone">Everyone (each person)</option>'+state.people.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
-    if([...personSel.options].some(o=>o.value===currentPerson)) personSel.value=currentPerson;
+    renderCustomPeoplePicker();
   }
 
-  function customMultiplier(person){ return person==="Everyone" ? Math.max(1,state.people.length) : 1; }
+  function customPeopleForItem(item){
+    if(Array.isArray(item.people)) return item.people;
+    if(item.person==="Everyone") return householdNames();
+    return item.person ? [item.person] : [];
+  }
+
+  function customMultiplier(item){ return Math.max(0,customPeopleForItem(item).length); }
 
   function renderCustomMeal(){
     const box=$("#customMealItems"), totals=$("#customMealTotals");
@@ -417,13 +466,14 @@
     }
     box.innerHTML=customMeal.map((i,idx)=>{
       const f=state.foods.find(x=>x.id===i.foodId); if(!f) return '';
-      const mult=customMultiplier(i.person), totalServings=i.servings*mult;
-      const servingText=i.person==="Everyone"?`${i.servings} serving${i.servings===1?'':'s'} each · Everyone`:`${i.servings} serving${i.servings===1?'':'s'} · ${esc(i.person)}`;
+      const people=customPeopleForItem(i), mult=customMultiplier(i), totalServings=i.servings*mult;
+      const names=people.map(esc).join(', ');
+      const servingText=`${i.servings} serving${i.servings===1?'':'s'} each · ${names}`;
       return `<div class="card between" style="margin-bottom:8px"><div><strong>${esc(f.name)}</strong><div class="muted small">${servingText}</div></div><div class="row"><span>${Math.round(f.cal*totalServings)} cal · ${Math.round(f.protein*totalServings)}g protein</span><button class="btn danger" data-remove-custom="${idx}">Remove</button></div></div>`;
     }).join('');
     $$('[data-remove-custom]').forEach(b=>b.onclick=()=>{customMeal.splice(Number(b.dataset.removeCustom),1);renderCustomMeal();});
-    const cal=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.cal*i.servings*customMultiplier(i.person):0)},0);
-    const protein=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.protein*i.servings*customMultiplier(i.person):0)},0);
+    const cal=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.cal*i.servings*customMultiplier(i):0)},0);
+    const protein=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.protein*i.servings*customMultiplier(i):0)},0);
     totals.textContent=`Meal total: ${Math.round(cal)} calories · ${Math.round(protein)}g protein`;
     $("#useCustomMeal").disabled=false;
   }
@@ -437,20 +487,28 @@
     $("#showCustomMeal").classList.add("active"); $("#showGeneratedMeal").classList.remove("active");
     renderCustomMealOptions(); renderCustomMeal();
   };
+  $("#selectAllCustomPeople").onclick=()=>{customSelectedPeople=householdNames();renderCustomPeoplePicker();};
+  $("#clearCustomPeople").onclick=()=>{customSelectedPeople=[];renderCustomPeoplePicker();};
   $("#addCustomItem").onclick=()=>{
-    const foodId=Number($("#customFood").value), servings=num($("#customServings").value,0.25), person=$("#customPerson").value;
+    const foodId=Number($("#customFood").value), servings=num($("#customServings").value,0.25);
+    const people=selectedCustomPeople();
+    customSelectedPeople=[...people];
     const f=state.foods.find(x=>x.id===foodId); if(!f) return;
-    const requested=servings*customMultiplier(person);
-    const already=customMeal.filter(i=>i.foodId===foodId).reduce((t,i)=>t+i.servings*customMultiplier(i.person),0);
+    if(!people.length){ alert("Select at least one person for this ingredient."); return; }
+    const requested=servings*people.length;
+    const already=customMeal.filter(i=>i.foodId===foodId).reduce((t,i)=>t+i.servings*customMultiplier(i),0);
     if(requested+already>f.qty){ alert(`Only ${f.qty} serving${f.qty===1?'':'s'} of ${f.name} available.`); return; }
-    if(person==="Everyone" && f.owner!=="Everyone" && f.owner!=="Both"){ alert(`${f.name} is marked for ${f.owner} only, so it cannot be assigned to everyone.`); return; }
-    if(person!=="Everyone" && f.owner!=="Everyone" && f.owner!=="Both" && f.owner!==person){ alert(`${f.name} is marked for ${f.owner} only.`); return; }
-    customMeal.push({foodId,servings:Number(servings.toFixed(2)),person});
+    const restrictedOwner=(f.owner==="Both"?"Everyone":f.owner);
+    if(restrictedOwner!=="Everyone"){
+      const invalid=people.filter(name=>name!==restrictedOwner);
+      if(invalid.length){ alert(`${f.name} is marked for ${restrictedOwner} only.`); return; }
+    }
+    customMeal.push({foodId,servings:Number(servings.toFixed(2)),people:[...people]});
     $("#customServings").value=1; renderCustomMeal();
   };
   $("#clearCustomMeal").onclick=()=>{customMeal=[];renderCustomMeal();};
   $("#useCustomMeal").onclick=()=>{
-    const usage={}; customMeal.forEach(i=>usage[i.foodId]=(usage[i.foodId]||0)+(i.servings*customMultiplier(i.person)));
+    const usage={}; customMeal.forEach(i=>usage[i.foodId]=(usage[i.foodId]||0)+(i.servings*customMultiplier(i)));
     const insufficient=Object.entries(usage).find(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); return !f||f.qty<amt;});
     if(insufficient){ alert("Inventory changed and this meal no longer fits. Please adjust the meal."); renderCustomMealOptions(); return; }
     applyUsage(usage);
