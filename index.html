@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v4.3</title>
+<title>Pantry Planner v4.4</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,7 +47,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4.3</h1>
+      <h1>Pantry Planner v4.4</h1>
       <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
     </div>
     <button id="resetAll" class="btn danger" type="button">Reset all data</button>
@@ -474,7 +474,21 @@
     $$('[data-remove-custom]').forEach(b=>b.onclick=()=>{customMeal.splice(Number(b.dataset.removeCustom),1);renderCustomMeal();});
     const cal=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.cal*i.servings*customMultiplier(i):0)},0);
     const protein=customMeal.reduce((t,i)=>{const f=state.foods.find(x=>x.id===i.foodId);return t+(f?f.protein*i.servings*customMultiplier(i):0)},0);
-    totals.textContent=`Meal total: ${Math.round(cal)} calories · ${Math.round(protein)}g protein`;
+
+    const perPerson={};
+    customMeal.forEach(i=>{
+      const f=state.foods.find(x=>x.id===i.foodId);
+      if(!f) return;
+      customPeopleForItem(i).forEach(name=>{
+        if(!perPerson[name]) perPerson[name]={cal:0,protein:0};
+        perPerson[name].cal+=f.cal*i.servings;
+        perPerson[name].protein+=f.protein*i.servings;
+      });
+    });
+    const personRows=householdNames().filter(name=>perPerson[name]).map(name=>
+      `<div class="between" style="margin-top:6px"><strong>${esc(name)}</strong><span>${Math.round(perPerson[name].cal)} cal · ${Math.round(perPerson[name].protein)}g protein</span></div>`
+    ).join('');
+    totals.innerHTML=`<div><strong>Meal total:</strong> ${Math.round(cal)} calories · ${Math.round(protein)}g protein</div>${personRows?`<div style="margin-top:10px"><div class="muted small">Per person</div>${personRows}</div>`:''}`;
     $("#useCustomMeal").disabled=false;
   }
 
