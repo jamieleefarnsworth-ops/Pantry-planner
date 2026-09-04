@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.0</title>
+<title>Pantry Planner v5.1</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,7 +47,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.0</h1>
+      <h1>Pantry Planner v5.1</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -167,9 +167,21 @@
   </section>
 
   <section id="plan" class="tab-panel hidden">
-    <div class="panel between">
-      <div><h2>Simple 3-day meal plan</h2><p class="muted">Planning does not deduct inventory.</p></div>
-      <button id="makePlan" class="btn primary" type="button">Build 3-day plan</button>
+    <div class="panel">
+      <div class="between">
+        <div><h2>Simple 3-day meal plan</h2><p class="muted">Choose one or more household members. Planning does not deduct inventory.</p></div>
+        <button id="makePlan" class="btn primary" type="button">Build 3-day plan</button>
+      </div>
+      <div style="margin-top:12px">
+        <label>Who are you meal planning for?</label>
+        <div class="people-picker">
+          <div id="planPeopleList" class="people-picker-list"></div>
+          <div class="picker-actions">
+            <button id="selectAllPlanPeople" class="btn" type="button">Select all</button>
+            <button id="clearPlanPeople" class="btn" type="button">Clear</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="planResult" class="cards"></div>
   </section>
@@ -344,7 +356,7 @@
     $$("[data-edit-person]").forEach(b=>b.onclick=()=>startPersonEdit(Number(b.dataset.editPerson)));
     $$("[data-remove-person]").forEach(b=>b.onclick=()=>{
       state.people=state.people.filter(p=>p.id!==Number(b.dataset.removePerson));
-      save(); renderPeople(); syncOwners(); renderCustomMealOptions();
+      save(); renderPeople(); syncOwners(); renderCustomMealOptions(); renderPlanPeoplePicker();
     });
     syncOwners();
   }
@@ -711,12 +723,41 @@
     $("#customMealTotals").textContent="Meal used. Inventory updated; anything that reached zero was added to Shopping List.";
   };
 
+  let planSelectedPeople=null;
+
+  function ensurePlanPeopleSelection(){
+    const ids=state.people.map(p=>p.id);
+    if(planSelectedPeople===null) planSelectedPeople=[...ids];
+    else planSelectedPeople=planSelectedPeople.filter(id=>ids.includes(id));
+  }
+
+  function selectedPlanPeople(){
+    return $$("#planPeopleList input[type=checkbox]:checked").map(cb=>Number(cb.value));
+  }
+
+  function renderPlanPeoplePicker(){
+    const box=$("#planPeopleList"); if(!box) return;
+    ensurePlanPeopleSelection();
+    if(!state.people.length){
+      box.innerHTML='<span class="muted small">Add household members first.</span>';
+      return;
+    }
+    box.innerHTML=state.people.map(p=>`<label class="person-check"><input type="checkbox" value="${p.id}" ${planSelectedPeople.includes(p.id)?'checked':''}><span>${esc(p.name)}</span></label>`).join('');
+    $$("#planPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{planSelectedPeople=selectedPlanPeople();});
+  }
+
+  $("#selectAllPlanPeople").onclick=()=>{planSelectedPeople=state.people.map(p=>p.id);renderPlanPeoplePicker();};
+  $("#clearPlanPeople").onclick=()=>{planSelectedPeople=[];renderPlanPeoplePicker();};
+
   $("#makePlan").onclick=()=>{
     if(!state.people.length||!state.foods.length){$("#planResult").innerHTML='<p class="muted">Add people and food first.</p>';return;}
+    planSelectedPeople=selectedPlanPeople();
+    const people=state.people.filter(p=>planSelectedPeople.includes(p.id));
+    if(!people.length){$("#planResult").innerHTML='<p class="muted">Select at least one household member to build a meal plan.</p>';return;}
     const types=["Breakfast","Lunch","Dinner"];
     $("#planResult").innerHTML=[1,2,3].map(day=>`<div class="card"><h3>Day ${day}</h3>${types.map((t,i)=>{
-      const m=buildPersonMeal(state.people[0],t,"balanced",day*10+i);
-      return `<p><strong>${t}</strong><br><span class="muted small">${m.items.map(x=>`${x.servings}× ${esc(x.food.name)}`).join(", ")||"No full-serving combination"}</span></p>`;
+      const meals=people.map((person,j)=>buildPersonMeal(person,t,"balanced",day*100+i*10+j));
+      return `<div class="meal-person"><h3>${t}</h3>${meals.map(m=>`<div style="margin-top:10px"><strong>${esc(m.person.name)}</strong><br><span class="muted small">${m.items.map(x=>`${x.servings}× ${esc(x.food.name)}`).join(", ")||"No full-serving combination"}</span><br><span class="small">${m.totalCal} cal · Protein ${Math.round(m.totalProtein)}g · Carbs ${Math.round(m.totalCarbs)}g · Fat ${Math.round(m.totalFat)}g</span></div>`).join("")}</div>`;
     }).join("")}</div>`).join("");
   };
 
@@ -756,7 +797,7 @@
     }
   };
 
-  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();}
+  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderPlanPeoplePicker();}
   renderAll();
   initCloud();
 })();
