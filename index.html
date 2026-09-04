@@ -40,6 +40,10 @@
   .person-check input{width:20px;height:20px;min-height:0;margin:0;accent-color:var(--accent)}
   .picker-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .picker-actions .btn{min-height:38px;padding:7px 10px;font-size:13px}
+  .meal-type-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:8px}
+  .meal-type-option{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:1px solid var(--border);border-radius:10px;background:#14171b;padding:10px 6px;min-height:78px;text-align:center;font-size:14px;cursor:pointer}
+  .meal-type-option input{order:2;width:24px;height:24px;min-height:0;margin:0;padding:0;accent-color:var(--accent)}
+  .meal-type-option span{order:1}
   @media(max-width:600px){.wrap{padding:10px}.btn{flex:1}.tabs .btn{flex:0 1 auto}}
 </style>
 </head>
@@ -78,9 +82,9 @@
         <div>
           <label>Meal type</label>
           <div class="meal-type-picker">
-            <label class="meal-type-option"><input type="checkbox" name="foodMealType" value="Breakfast"> Breakfast</label>
-            <label class="meal-type-option"><input type="checkbox" name="foodMealType" value="Lunch"> Lunch</label>
-            <label class="meal-type-option"><input type="checkbox" name="foodMealType" value="Dinner"> Dinner</label>
+            <label class="meal-type-option"><span>Breakfast</span><input type="checkbox" name="foodMealType" value="Breakfast"></label>
+            <label class="meal-type-option"><span>Lunch</span><input type="checkbox" name="foodMealType" value="Lunch"></label>
+            <label class="meal-type-option"><span>Dinner</span><input type="checkbox" name="foodMealType" value="Dinner"></label>
           </div>
         </div>
         <label>Who can eat it?<select id="foodOwner"><option value="Everyone">Everyone</option></select></label>
@@ -221,9 +225,9 @@
         <div>
           <label>Meal type</label>
           <div class="meal-type-picker">
-            <label class="meal-type-option"><input type="checkbox" name="replaceMealType" value="Breakfast"> Breakfast</label>
-            <label class="meal-type-option"><input type="checkbox" name="replaceMealType" value="Lunch"> Lunch</label>
-            <label class="meal-type-option"><input type="checkbox" name="replaceMealType" value="Dinner"> Dinner</label>
+            <label class="meal-type-option"><span>Breakfast</span><input type="checkbox" name="replaceMealType" value="Breakfast"></label>
+            <label class="meal-type-option"><span>Lunch</span><input type="checkbox" name="replaceMealType" value="Lunch"></label>
+            <label class="meal-type-option"><span>Dinner</span><input type="checkbox" name="replaceMealType" value="Dinner"></label>
           </div>
         </div>
         <label>Who can eat it?<select id="replaceOwner"><option value="Everyone">Everyone</option></select></label>
