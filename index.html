@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.2</title>
+<title>Pantry Planner v5.3</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.2</h1>
+      <h1>Pantry Planner v5.3</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -69,7 +69,7 @@
   <section id="inventory" class="tab-panel">
     <div class="panel">
       <div class="between">
-        <div><h2>Food inventory</h2><p class="muted">Add or edit ingredients you have on hand.</p></div>
+        <div><h2>Food inventory</h2><p class="muted">Add or edit ingredients you have on hand. Food role helps Pantry Planner build meals that make sense together.</p></div>
         <div class="row"><span id="inventoryCount" class="badge">0 items</span><button id="resetInventory" class="btn danger" type="button">Reset inventory</button></div>
       </div>
       <form id="inventoryForm" class="grid">
@@ -79,6 +79,7 @@
         <label>Protein g / serving<input id="foodProtein" type="number" min="0" step="0.1" placeholder="20" required></label>
         <label>Carbs g / serving<input id="foodCarbs" type="number" min="0" step="0.1" placeholder="0" required></label>
         <label>Fat g / serving<input id="foodFat" type="number" min="0" step="0.1" placeholder="0" required></label>
+        <label>Food role<select id="foodRole"><option value="Auto">Auto — let Pantry Planner decide</option><option value="Main / Protein">Main / Protein</option><option value="Starch / Base">Starch / Base</option><option value="Fruit / Vegetable">Fruit / Vegetable</option><option value="Side / Snack">Side / Snack</option><option value="Sauce / Condiment">Sauce / Condiment</option></select></label>
         <div>
           <label>Meal type</label>
           <div class="meal-type-picker">
@@ -173,7 +174,7 @@
   <section id="plan" class="tab-panel hidden">
     <div class="panel">
       <div class="between">
-        <div><h2>Simple 3-day meal plan</h2><p class="muted">Choose one or more household members. Planning does not deduct inventory.</p></div>
+        <div><h2>Simple 3-day meal plan</h2><p class="muted">Choose one or more household members. Building a plan does not deduct inventory; tap Use this meal when you actually eat one.</p></div>
         <button id="makePlan" class="btn primary" type="button">Build 3-day plan</button>
       </div>
       <div style="margin-top:12px">
@@ -222,6 +223,7 @@
         <label>Protein g / serving<input id="replaceProtein" type="number" min="0" step="0.1" placeholder="2"></label>
         <label>Carbs g / serving<input id="replaceCarbs" type="number" min="0" step="0.1" placeholder="30"></label>
         <label>Fat g / serving<input id="replaceFat" type="number" min="0" step="0.1" placeholder="1.5"></label>
+        <label>Food role<select id="replaceRole"><option value="Auto">Auto — let Pantry Planner decide</option><option value="Main / Protein">Main / Protein</option><option value="Starch / Base">Starch / Base</option><option value="Fruit / Vegetable">Fruit / Vegetable</option><option value="Side / Snack">Side / Snack</option><option value="Sauce / Condiment">Sauce / Condiment</option></select></label>
         <div>
           <label>Meal type</label>
           <div class="meal-type-picker">
@@ -277,7 +279,7 @@
     loaded.foods = (loaded.foods||[]).map(f=>{
       const migratedDays = f.useDays!=null ? Number(f.useDays) : (f.soon==="Yes" ? 4 : 8);
       const mealTypes = Array.isArray(f.mealTypes) && f.mealTypes.length ? f.mealTypes.filter(t=>["Breakfast","Lunch","Dinner"].includes(t)) : ["Breakfast","Lunch","Dinner"];
-      return {...f,mealTypes,owner:f.owner==="Both"?"Everyone":f.owner,carbs:Number(f.carbs)||0,fat:Number(f.fat)||0,useDays:migratedDays,useSetAt:Number(f.useSetAt)||Date.now()};
+      return {...f,mealTypes,role:["Auto","Main / Protein","Starch / Base","Fruit / Vegetable","Side / Snack","Sauce / Condiment"].includes(f.role)?f.role:"Auto",owner:f.owner==="Both"?"Everyone":f.owner,carbs:Number(f.carbs)||0,fat:Number(f.fat)||0,useDays:migratedDays,useSetAt:Number(f.useSetAt)||Date.now()};
     });
     loaded.shopping = loaded.shopping||[];
     loaded.people = loaded.people||[];
@@ -434,7 +436,7 @@
             <button class="btn danger" data-remove-food="${f.id}">Remove</button>
           </div>
         </div>
-        ${(f.mealTypes||[]).map(t=>`<span class="badge">${esc(t)}</span>`).join("")}<span class="badge">${esc(f.owner==="Both"?"Everyone":f.owner)}</span><span class="badge">${esc(useWindowInfo(f).label)}</span>
+        ${(f.mealTypes||[]).map(t=>`<span class="badge">${esc(t)}</span>`).join("")}<span class="badge">${esc(f.role||"Auto")}</span><span class="badge">${esc(f.owner==="Both"?"Everyone":f.owner)}</span><span class="badge">${esc(useWindowInfo(f).label)}</span>
       </div>`).join("") : '<p class="muted">No food entered yet.</p>';
 
     $$("[data-edit-food]").forEach(b=>b.onclick=()=>startEdit(Number(b.dataset.editFood)));
@@ -451,6 +453,7 @@
     editingFoodId=id;
     $("#foodName").value=f.name; $("#foodQty").value=f.qty; $("#foodCal").value=f.cal;
     $("#foodProtein").value=f.protein; $("#foodCarbs").value=f.carbs||0; $("#foodFat").value=f.fat||0;
+    $("#foodRole").value=f.role||"Auto";
     $$('input[name="foodMealType"]').forEach(cb=>cb.checked=(f.mealTypes||[]).includes(cb.value));
     $("#foodOwner").value=f.owner; $("#foodUseWindow").value=String([0,2,4,7,8].includes(currentUseDays(f))?currentUseDays(f):(currentUseDays(f)<=2?2:currentUseDays(f)<=4?4:currentUseDays(f)<=7?7:8));
     $("#saveFoodBtn").textContent="Save changes";
@@ -463,6 +466,7 @@
     $("#inventoryForm").reset();
     $$('input[name="foodMealType"]').forEach(cb=>cb.checked=false);
     syncOwners();
+    $("#foodRole").value="Auto";
     $("#foodUseWindow").value="8";
     $("#saveFoodBtn").textContent="Add food";
     $("#cancelEditBtn").classList.add("hidden");
@@ -480,6 +484,7 @@
       protein:num($("#foodProtein").value),
       carbs:num($("#foodCarbs").value),
       fat:num($("#foodFat").value),
+      role:$("#foodRole").value,
       mealTypes:$$('input[name="foodMealType"]:checked').map(cb=>cb.value),
       owner:$("#foodOwner").value,
       useDays:Number($("#foodUseWindow").value),
@@ -557,7 +562,12 @@
   };
 
   function mealLimit(p,type){ return p[type.toLowerCase()] || 500; }
-  function eligible(person,type){ return state.foods.filter(f=>f.qty>=1&&(f.owner==="Everyone"||f.owner==="Both"||f.owner===person.name)&&(f.mealTypes||[]).includes(type)); }
+  function eligible(person,type,stock=null){
+    return state.foods.filter(f=>{
+      const available=stock ? Number(stock[f.id]||0) : Number(f.qty||0);
+      return available>=1&&(f.owner==="Everyone"||f.owner==="Both"||f.owner===person.name)&&(f.mealTypes||[]).includes(type);
+    });
+  }
   function score(f,priority){
     if(priority==="protein") return f.protein*10+useWindowInfo(f).rank*0.5;
     if(priority==="use-soon") return useWindowInfo(f).rank*100+f.protein;
@@ -569,24 +579,111 @@
     for(let i=a.length-1;i>0;i--){x=(x*233280+49297)%233280; const j=Math.floor((x/233280)*(i+1)); [a[i],a[j]]=[a[j],a[i]];}
     return a;
   }
-  function choose(person,type,priority,seedv){
-    const a=shuffle(eligible(person,type).map(f=>({...f,_score:score(f,priority)})),seedv+person.id);
-    a.sort((x,y)=>Math.abs(y._score-x._score)>15?y._score-x._score:0);
-    return a.slice(0,6);
+  function inferFoodRole(f){
+    if(f.role && f.role!=="Auto") return f.role;
+    const n=(f.name||"").toLowerCase();
+    if(/ketchup|mustard|mayo|mayonnaise|relish|sauce|salsa|queso|gravy|dressing|parmesan|seasoning|honey/.test(n)) return "Sauce / Condiment";
+    if(/bun|roll|bread|toast|rice|pasta|spaghetti|macaroni|farfalle|noodle|potato|cereal|tortilla|wrap/.test(n)) return "Starch / Base";
+    if(/apple|banana|berry|berries|orange|grape|fruit|broccoli|carrot|onion|jalape|pepper|lettuce|spinach|vegetable|veggie|tomato/.test(n)) return "Fruit / Vegetable";
+    if(/yogurt|cottage cheese|popcorn|pudding|cracker|chips|snack/.test(n)) return "Side / Snack";
+    if(/chicken|beef|burger|hamburger|hot dog|hotdog|frank|sausage|turkey|ham|pork|tuna|fish|salmon|egg|chili|steak|meat/.test(n)) return "Main / Protein";
+    if(Number(f.protein)>=10) return "Main / Protein";
+    if(Number(f.carbs)>=20) return "Starch / Base";
+    return "Side / Snack";
   }
-  function buildPersonMeal(person,type,priority,seedv){
-    const limit=mealLimit(person,type); let remaining=limit,totalCal=0,totalProtein=0,totalCarbs=0,totalFat=0,items=[];
-    for(const f of choose(person,type,priority,seedv)){
-      if(f.cal<=0||f.qty<1||f.cal>remaining) continue;
-      const maxWhole=Math.min(Math.floor(f.qty),Math.floor(remaining/f.cal)); if(maxWhole<1) continue;
-      let servings=1;
-      const variation=(seedv+f.id+person.id)%3;
-      if(variation===1&&maxWhole>=2) servings=2;
-      if(variation===2&&maxWhole>=3) servings=3;
-      servings=Math.min(servings,maxWhole);
+  function pairScore(anchor,candidate,type){
+    const a=(anchor.name||"").toLowerCase(), b=(candidate.name||"").toLowerCase();
+    const role=inferFoodRole(candidate);
+    let v=0;
+    const has=(text,re)=>re.test(text);
+    if(has(a,/hot dog|hotdog|frank|sausage/)){
+      if(has(b,/bun|roll/)) v+=100;
+      if(has(b,/ketchup|mustard|relish/)) v+=80;
+    }
+    if(has(a,/burger|hamburger|ground beef|beef patty/)){
+      if(has(b,/bun|roll/)) v+=100;
+      if(has(b,/cheese|ketchup|mustard|mayo|relish/)) v+=70;
+    }
+    if(has(a,/spaghetti|pasta|macaroni|farfalle|noodle/)){
+      if(has(b,/sauce|marinara|tomato sauce/)) v+=100;
+      if(has(b,/parmesan|cheese/)) v+=75;
+      if(has(b,/ground beef|meatball|sausage|chicken/)) v+=60;
+    }
+    if(has(a,/chicken|steak|pork|turkey|fish|salmon/)){
+      if(has(b,/rice|potato|vegetable|veggie|broccoli|carrot/)) v+=60;
+    }
+    if(has(a,/tuna/)){
+      if(has(b,/bread|toast|wrap|mayo|mayonnaise/)) v+=80;
+    }
+    if(has(a,/cereal/)){
+      if(has(b,/milk/)) v+=100;
+      if(has(b,/banana|berry|fruit/)) v+=50;
+    }
+    if(has(a,/yogurt/)){
+      if(has(b,/fruit|berry|banana|apple|cereal|granola/)) v+=60;
+    }
+    if(has(a,/egg/)){
+      if(has(b,/toast|bread|potato|cheese/)) v+=60;
+    }
+    if(has(a,/chili/)){
+      if(has(b,/cheese|cracker|bread|roll/)) v+=50;
+    }
+    if(type!=="Breakfast" && role==="Side / Snack") v-=35;
+    if(role==="Sauce / Condiment") v+=5;
+    return v;
+  }
+  function chooseAnchor(person,type,priority,seedv,stock=null){
+    const foods=eligible(person,type,stock);
+    if(!foods.length) return null;
+    const preferred=foods.filter(f=>inferFoodRole(f)==="Main / Protein");
+    const breakfastFallback=type==="Breakfast" ? foods.filter(f=>["Side / Snack","Starch / Base"].includes(inferFoodRole(f))) : [];
+    const pool=preferred.length?preferred:(breakfastFallback.length?breakfastFallback:foods.filter(f=>inferFoodRole(f)!=="Sauce / Condiment"));
+    if(!pool.length) return foods[0];
+    const mixed=shuffle(pool,seedv+person.id).map(f=>({...f,_score:score(f,priority)}));
+    mixed.sort((a,b)=>b._score-a._score);
+    return mixed[0];
+  }
+  function buildPersonMeal(person,type,priority,seedv,stock=null){
+    const limit=mealLimit(person,type), available=id=>stock?Number(stock[id]||0):Number(state.foods.find(f=>f.id===id)?.qty||0);
+    let totalCal=0,totalProtein=0,totalCarbs=0,totalFat=0,items=[];
+    const anchor=chooseAnchor(person,type,priority,seedv,stock);
+    if(!anchor) return {person,limit,items,totalCal,totalProtein,totalCarbs,totalFat};
+
+    const addFood=(f,servings=1)=>{
+      const max=Math.min(Math.floor(available(f.id)),Math.floor((limit-totalCal)/Math.max(1,Number(f.cal)||1)));
+      servings=Math.min(servings,max);
+      if(servings<1) return false;
       const c=Math.round(servings*f.cal),pr=servings*f.protein,cb=servings*(f.carbs||0),ft=servings*(f.fat||0);
-      items.push({food:f,servings,c,pr,cb,ft}); totalCal+=c; totalProtein+=pr; totalCarbs+=cb; totalFat+=ft; remaining=limit-totalCal;
-      if(items.length>=3||remaining<=0) break;
+      items.push({food:f,servings,c,pr,cb,ft}); totalCal+=c; totalProtein+=pr; totalCarbs+=cb; totalFat+=ft; return true;
+    };
+
+    let anchorServings=1;
+    const maxAnchor=Math.min(Math.floor(available(anchor.id)),Math.floor(limit/Math.max(1,anchor.cal)));
+    if(maxAnchor>=2 && anchor.cal*2<=limit*0.78 && Number(anchor.protein)>=10) anchorServings=2;
+    addFood(anchor,anchorServings);
+
+    const usedRoles=new Set(items.map(i=>inferFoodRole(i.food)));
+    const candidates=shuffle(eligible(person,type,stock).filter(f=>f.id!==anchor.id),seedv+17)
+      .map(f=>({f,pair:pairScore(anchor,f,type),base:score(f,priority),role:inferFoodRole(f)}))
+      .filter(x=>x.role!=="Sauce / Condiment" || x.pair>20)
+      .filter(x=>!(type!=="Breakfast" && x.role==="Side / Snack" && x.pair<=0))
+      .sort((a,b)=>(b.pair-a.pair)||(b.base-a.base));
+
+    for(const x of candidates){
+      if(items.length>=3) break;
+      if(x.role==="Starch / Base" && usedRoles.has("Starch / Base")) continue;
+      if(x.role==="Side / Snack" && usedRoles.has("Side / Snack")) continue;
+      if(x.role==="Main / Protein" && usedRoles.has("Main / Protein") && x.pair<50) continue;
+      if(x.pair<=0 && items.length>=2) continue;
+      if(x.pair<=0 && x.role==="Fruit / Vegetable" && type==="Breakfast" && inferFoodRole(anchor)!=="Side / Snack") continue;
+      if(addFood(x.f,1)) usedRoles.add(x.role);
+    }
+
+    // A condiment is only added when it has a known pairing with the main/base.
+    if(items.length<3){
+      const cond=eligible(person,type,stock).filter(f=>!items.some(i=>i.food.id===f.id)&&inferFoodRole(f)==="Sauce / Condiment")
+        .map(f=>({f,p:Math.max(...items.map(i=>pairScore(i.food,f,type)),0)})).sort((a,b)=>b.p-a.p)[0];
+      if(cond && cond.p>=50) addFood(cond.f,1);
     }
     return {person,limit,items,totalCal,totalProtein,totalCarbs,totalFat};
   }
@@ -595,7 +692,12 @@
     let attempts=0,r=[],sig="";
     do{
       const seedv=state.generateCount+attempts+1;
-      r=state.people.map(p=>buildPersonMeal(p,type,priority,seedv));
+      const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
+      r=state.people.map((p,idx)=>{
+        const meal=buildPersonMeal(p,type,priority,seedv+idx,stock);
+        meal.items.forEach(i=>stock[i.food.id]=Math.max(0,stock[i.food.id]-i.servings));
+        return meal;
+      });
       sig=signature(r); attempts++;
     }while(state.lastMealSignatures.includes(sig)&&attempts<20);
     state.generateCount+=attempts;
@@ -768,6 +870,7 @@
   };
 
   let planSelectedPeople=null;
+  let currentPlan=null;
 
   function ensurePlanPeopleSelection(){
     const ids=state.people.map(p=>p.id);
@@ -790,6 +893,37 @@
     $$("#planPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{planSelectedPeople=selectedPlanPeople();});
   }
 
+  function planEntryHtml(entry){
+    const m=entry.meal;
+    return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+      <div class="between"><strong>${esc(m.person.name)}</strong><button class="btn ${entry.used?'':'primary'}" type="button" data-use-plan="${entry.id}" ${entry.used?'disabled':''}>${entry.used?'✓ Meal used':'Use this meal'}</button></div>
+      <div class="muted small" style="margin-top:5px">${m.items.map(x=>`${x.servings}× ${esc(x.food.name)}`).join(", ")||"No full-serving combination"}</div>
+      <div class="small" style="margin-top:4px">${m.totalCal} cal · Protein ${Math.round(m.totalProtein)}g · Carbs ${Math.round(m.totalCarbs)}g · Fat ${Math.round(m.totalFat)}g</div>
+    </div>`;
+  }
+
+  function renderCurrentPlan(){
+    if(!currentPlan){return;}
+    $("#planResult").innerHTML=currentPlan.days.map(day=>`<div class="card"><h3>Day ${day.day}</h3>${day.meals.map(group=>`<div class="meal-person"><h3>${esc(group.type)}</h3>${group.entries.map(planEntryHtml).join("")}</div>`).join("")}</div>`).join("");
+    $$('[data-use-plan]').forEach(b=>b.onclick=()=>{
+      const id=b.dataset.usePlan;
+      let entry=null;
+      currentPlan.days.some(d=>d.meals.some(g=>{const found=g.entries.find(e=>e.id===id);if(found){entry=found;return true;}return false;}));
+      if(!entry||entry.used) return;
+      if(!entry.meal.items.length){alert("This meal has no inventory items to use.");return;}
+      const usage={}; entry.meal.items.forEach(i=>usage[i.food.id]=(usage[i.food.id]||0)+i.servings);
+      const insufficient=Object.entries(usage).find(([fid,amt])=>{const f=state.foods.find(x=>x.id===Number(fid));return !f||Number(f.qty)<amt;});
+      if(insufficient){
+        const f=state.foods.find(x=>x.id===Number(insufficient[0]));
+        alert(`${f?f.name:"An ingredient"} no longer has enough servings in Inventory for this planned meal. Rebuild the 3-day plan to use the latest inventory.`);
+        return;
+      }
+      applyUsage(usage);
+      entry.used=true;
+      renderCurrentPlan();
+    });
+  }
+
   $("#selectAllPlanPeople").onclick=()=>{planSelectedPeople=state.people.map(p=>p.id);renderPlanPeoplePicker();};
   $("#clearPlanPeople").onclick=()=>{planSelectedPeople=[];renderPlanPeoplePicker();};
 
@@ -799,10 +933,24 @@
     const people=state.people.filter(p=>planSelectedPeople.includes(p.id));
     if(!people.length){$("#planResult").innerHTML='<p class="muted">Select at least one household member to build a meal plan.</p>';return;}
     const types=["Breakfast","Lunch","Dinner"];
-    $("#planResult").innerHTML=[1,2,3].map(day=>`<div class="card"><h3>Day ${day}</h3>${types.map((t,i)=>{
-      const meals=people.map((person,j)=>buildPersonMeal(person,t,"balanced",day*100+i*10+j));
-      return `<div class="meal-person"><h3>${t}</h3>${meals.map(m=>`<div style="margin-top:10px"><strong>${esc(m.person.name)}</strong><br><span class="muted small">${m.items.map(x=>`${x.servings}× ${esc(x.food.name)}`).join(", ")||"No full-serving combination"}</span><br><span class="small">${m.totalCal} cal · Protein ${Math.round(m.totalProtein)}g · Carbs ${Math.round(m.totalCarbs)}g · Fat ${Math.round(m.totalFat)}g</span></div>`).join("")}</div>`;
-    }).join("")}</div>`).join("");
+    const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
+    const days=[];
+    for(let day=1;day<=3;day++){
+      const mealGroups=[];
+      for(let i=0;i<types.length;i++){
+        const type=types[i],entries=[];
+        for(let j=0;j<people.length;j++){
+          const person=people[j];
+          const meal=buildPersonMeal(person,type,"balanced",day*100+i*10+j,stock);
+          meal.items.forEach(item=>stock[item.food.id]=Math.max(0,stock[item.food.id]-item.servings));
+          entries.push({id:`${day}-${i}-${person.id}`,used:false,meal});
+        }
+        mealGroups.push({type,entries});
+      }
+      days.push({day,meals:mealGroups});
+    }
+    currentPlan={days};
+    renderCurrentPlan();
   };
 
   $("#shoppingForm").onsubmit=e=>{
@@ -867,6 +1015,7 @@
     $("#replaceProtein").value=old?.protein ?? "";
     $("#replaceCarbs").value=old?.carbs ?? "";
     $("#replaceFat").value=old?.fat ?? "";
+    $("#replaceRole").value=old?.role||"Auto";
     $$("input[name=replaceMealType]").forEach(cb=>cb.checked=old?(old.mealTypes||[]).includes(cb.value):false);
     syncReplaceOwnerOptions(old?.owner||"Everyone");
     $("#replaceUseWindow").value="8";
@@ -903,7 +1052,7 @@
     const existingNew=state.foods.find(f=>f.name.trim().toLowerCase()===name.toLowerCase());
     const newData={
       name,qty:total,cal:num($("#replaceCal").value),protein:num($("#replaceProtein").value),
-      carbs:num($("#replaceCarbs").value),fat:num($("#replaceFat").value),mealTypes,
+      carbs:num($("#replaceCarbs").value),fat:num($("#replaceFat").value),role:$("#replaceRole").value,mealTypes,
       owner:$("#replaceOwner").value,useDays:Number($("#replaceUseWindow").value),useSetAt:Date.now()
     };
     if(existingNew){
@@ -951,7 +1100,7 @@
     }
   };
 
-  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderPlanPeoplePicker();}
+  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderPlanPeoplePicker();if(currentPlan) renderCurrentPlan();}
   renderAll();
   initCloud();
 })();
