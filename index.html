@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.1</title>
+<title>Pantry Planner v5.2</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,7 +47,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.1</h1>
+      <h1>Pantry Planner v5.2</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -189,11 +189,50 @@
   <section id="shopping" class="tab-panel hidden">
     <div class="panel">
       <h2>Shopping list</h2>
+      <p class="muted small">When you buy something, add the servings back to the existing food or replace it with a different brand/item and new nutrition info.</p>
       <form id="shoppingForm" class="row">
         <input id="shoppingInput" style="flex:1;min-width:180px;margin-top:0" placeholder="Milk" required>
         <button class="btn primary" type="submit">Add</button>
       </form>
     </div>
+
+    <div id="sameItemPanel" class="panel hidden" style="margin-top:12px">
+      <div class="between"><div><h2>Bought same item</h2><p id="sameItemName" class="muted"></p></div><button id="cancelSameItem" class="btn" type="button">Cancel</button></div>
+      <div class="grid">
+        <label>Containers bought<input id="sameContainers" type="number" min="1" step="1" placeholder="1"></label>
+        <label>Servings per container<input id="sameServingsPerContainer" type="number" min="0.25" step="0.25" placeholder="8"></label>
+        <label>Total servings being added<input id="sameTotalServings" type="number" readonly></label>
+        <div style="align-self:end"><button id="confirmSameItem" class="btn primary" type="button">Add to inventory</button></div>
+      </div>
+      <p class="muted small">Calories and macros stay the same as the existing inventory item.</p>
+    </div>
+
+    <div id="replaceItemPanel" class="panel hidden" style="margin-top:12px">
+      <div class="between"><div><h2>Replace with new item</h2><p id="replaceOldName" class="muted"></p></div><button id="cancelReplaceItem" class="btn" type="button">Cancel</button></div>
+      <div class="grid">
+        <label>New food name<input id="replaceName" required placeholder="Great Value cereal"></label>
+        <label>Containers bought<input id="replaceContainers" type="number" min="1" step="1" placeholder="1"></label>
+        <label>Servings per container<input id="replaceServingsPerContainer" type="number" min="0.25" step="0.25" placeholder="8"></label>
+        <label>Total servings<input id="replaceTotalServings" type="number" readonly></label>
+        <label>Calories / serving<input id="replaceCal" type="number" min="0" step="1" placeholder="140"></label>
+        <label>Protein g / serving<input id="replaceProtein" type="number" min="0" step="0.1" placeholder="2"></label>
+        <label>Carbs g / serving<input id="replaceCarbs" type="number" min="0" step="0.1" placeholder="30"></label>
+        <label>Fat g / serving<input id="replaceFat" type="number" min="0" step="0.1" placeholder="1.5"></label>
+        <div>
+          <label>Meal type</label>
+          <div class="meal-type-picker">
+            <label class="meal-type-option"><input type="checkbox" name="replaceMealType" value="Breakfast"> Breakfast</label>
+            <label class="meal-type-option"><input type="checkbox" name="replaceMealType" value="Lunch"> Lunch</label>
+            <label class="meal-type-option"><input type="checkbox" name="replaceMealType" value="Dinner"> Dinner</label>
+          </div>
+        </div>
+        <label>Who can eat it?<select id="replaceOwner"><option value="Everyone">Everyone</option></select></label>
+        <label>How soon should this be used?<select id="replaceUseWindow"><option value="0">0 days — Use today</option><option value="2">1–2 days — Use first</option><option value="4">3–4 days — Use soon</option><option value="7">5–7 days — Keep in mind</option><option value="8" selected>8+ days — Plenty of time</option></select></label>
+        <div style="align-self:end"><button id="confirmReplaceItem" class="btn primary" type="button">Save new item</button></div>
+      </div>
+      <p class="muted small">If the old item has 0 servings left, it will be removed from Inventory when the replacement is saved. Any remaining old stock is kept.</p>
+    </div>
+
     <div id="shoppingList" style="margin-top:12px"></div>
   </section>
 </div>
@@ -227,6 +266,7 @@
   let remoteSaveTimer = null;
   let realtimeChannel = null;
   let db = null;
+  let activeShoppingId = null;
 
   function normalizeState(loaded){
     loaded = loaded && typeof loaded === "object" ? loaded : structuredClone(seed);
@@ -765,9 +805,119 @@
     e.preventDefault(); const name=$("#shoppingInput").value.trim(); if(!name)return;
     state.shopping.push({id:Date.now(),name}); $("#shoppingInput").value=""; save(); renderShopping();
   };
+  function matchingFoodForShopping(item){
+    return state.foods.find(f=>f.name.trim().toLowerCase()===item.name.trim().toLowerCase()) || null;
+  }
+
+  function hideShoppingPurchasePanels(){
+    activeShoppingId=null;
+    $("#sameItemPanel").classList.add("hidden");
+    $("#replaceItemPanel").classList.add("hidden");
+  }
+
+  function calcPurchaseTotal(containersId,perId,totalId){
+    const containers=Math.max(0,Number($(containersId).value)||0);
+    const per=Math.max(0,Number($(perId).value)||0);
+    const total=Math.round(containers*per*100)/100;
+    $(totalId).value=total||"";
+    return total;
+  }
+
+  function openSameItem(id){
+    const item=state.shopping.find(i=>i.id===id); if(!item) return;
+    const food=matchingFoodForShopping(item);
+    if(!food){
+      alert("There is no matching inventory item to refill. Use Replace with new item so you can enter its calories and macros.");
+      openReplaceItem(id);
+      return;
+    }
+    activeShoppingId=id;
+    $("#replaceItemPanel").classList.add("hidden");
+    $("#sameItemPanel").classList.remove("hidden");
+    $("#sameItemName").textContent=`${item.name} — currently ${food.qty} serving${food.qty===1?"":"s"} on hand`;
+    $("#sameContainers").value=1;
+    $("#sameServingsPerContainer").value="";
+    $("#sameTotalServings").value="";
+    $("#sameServingsPerContainer").focus();
+    $("#sameItemPanel").scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  function syncReplaceOwnerOptions(selected="Everyone"){
+    const sel=$("#replaceOwner");
+    sel.innerHTML='<option value="Everyone">Everyone</option>'+state.people.map(p=>`<option value="${esc(p.name)}">${esc(p.name)} only</option>`).join("");
+    sel.value=[...sel.options].some(o=>o.value===selected)?selected:"Everyone";
+  }
+
+  function openReplaceItem(id){
+    const item=state.shopping.find(i=>i.id===id); if(!item) return;
+    const old=matchingFoodForShopping(item);
+    activeShoppingId=id;
+    $("#sameItemPanel").classList.add("hidden");
+    $("#replaceItemPanel").classList.remove("hidden");
+    $("#replaceOldName").textContent=`Replacing shopping-list item: ${item.name}`;
+    $("#replaceName").value="";
+    $("#replaceContainers").value=1;
+    $("#replaceServingsPerContainer").value="";
+    $("#replaceTotalServings").value="";
+    $("#replaceCal").value=old?.cal ?? "";
+    $("#replaceProtein").value=old?.protein ?? "";
+    $("#replaceCarbs").value=old?.carbs ?? "";
+    $("#replaceFat").value=old?.fat ?? "";
+    $$("input[name=replaceMealType]").forEach(cb=>cb.checked=old?(old.mealTypes||[]).includes(cb.value):false);
+    syncReplaceOwnerOptions(old?.owner||"Everyone");
+    $("#replaceUseWindow").value="8";
+    $("#replaceName").focus();
+    $("#replaceItemPanel").scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  $("#sameContainers").oninput=$("#sameServingsPerContainer").oninput=()=>calcPurchaseTotal("#sameContainers","#sameServingsPerContainer","#sameTotalServings");
+  $("#replaceContainers").oninput=$("#replaceServingsPerContainer").oninput=()=>calcPurchaseTotal("#replaceContainers","#replaceServingsPerContainer","#replaceTotalServings");
+  $("#cancelSameItem").onclick=hideShoppingPurchasePanels;
+  $("#cancelReplaceItem").onclick=hideShoppingPurchasePanels;
+
+  $("#confirmSameItem").onclick=()=>{
+    const item=state.shopping.find(i=>i.id===activeShoppingId); if(!item) return;
+    const food=matchingFoodForShopping(item); if(!food){openReplaceItem(item.id);return;}
+    const total=calcPurchaseTotal("#sameContainers","#sameServingsPerContainer","#sameTotalServings");
+    if(total<=0){alert("Enter how many containers you bought and how many servings are in each container.");return;}
+    food.qty=Math.round((Number(food.qty)+total)*100)/100;
+    state.shopping=state.shopping.filter(i=>i.id!==item.id);
+    save(); hideShoppingPurchasePanels(); renderFoods(); renderShopping(); renderCustomMealOptions();
+    alert(`${total} serving${total===1?"":"s"} of ${food.name} added to Inventory.`);
+  };
+
+  $("#confirmReplaceItem").onclick=()=>{
+    const item=state.shopping.find(i=>i.id===activeShoppingId); if(!item) return;
+    const name=$("#replaceName").value.trim();
+    const total=calcPurchaseTotal("#replaceContainers","#replaceServingsPerContainer","#replaceTotalServings");
+    const mealTypes=$$("input[name=replaceMealType]:checked").map(cb=>cb.value);
+    if(!name){alert("Enter the new food name.");return;}
+    if(total<=0){alert("Enter how many containers you bought and how many servings are in each container.");return;}
+    if(!mealTypes.length){alert("Select at least one meal type: Breakfast, Lunch, or Dinner.");return;}
+    const old=matchingFoodForShopping(item);
+    if(old && Number(old.qty)<=0) state.foods=state.foods.filter(f=>f.id!==old.id);
+    const existingNew=state.foods.find(f=>f.name.trim().toLowerCase()===name.toLowerCase());
+    const newData={
+      name,qty:total,cal:num($("#replaceCal").value),protein:num($("#replaceProtein").value),
+      carbs:num($("#replaceCarbs").value),fat:num($("#replaceFat").value),mealTypes,
+      owner:$("#replaceOwner").value,useDays:Number($("#replaceUseWindow").value),useSetAt:Date.now()
+    };
+    if(existingNew){
+      Object.assign(existingNew,newData,{id:existingNew.id,qty:Math.round((Number(existingNew.qty)+total)*100)/100});
+    }else{
+      state.foods.push({id:Date.now()+Math.random(),...newData});
+    }
+    state.shopping=state.shopping.filter(i=>i.id!==item.id);
+    save(); hideShoppingPurchasePanels(); renderFoods(); renderShopping(); renderCustomMealOptions();
+    alert(`${name} was added to Inventory and removed from the Shopping List.`);
+  };
+
   function renderShopping(){
-    $("#shoppingList").innerHTML=state.shopping.length?state.shopping.map(i=>`<div class="card between" style="margin-bottom:8px"><span>${esc(i.name)}</span><button class="btn" data-shop="${i.id}">Done</button></div>`).join(""):'<p class="muted">Nothing on the shopping list.</p>';
-    $$("[data-shop]").forEach(b=>b.onclick=()=>{state.shopping=state.shopping.filter(i=>i.id!==Number(b.dataset.shop));save();renderShopping();});
+    const sorted=state.shopping.slice().sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
+    $("#shoppingList").innerHTML=sorted.length?sorted.map(i=>`<div class="card" style="margin-bottom:8px"><div class="between"><strong>${esc(i.name)}</strong><div class="row"><button class="btn primary" data-bought-same="${i.id}" type="button">Bought same item</button><button class="btn" data-replace-shop="${i.id}" type="button">Replace with new item</button><button class="btn danger" data-remove-shop="${i.id}" type="button">Remove</button></div></div></div>`).join(""):'<p class="muted">Nothing on the shopping list.</p>';
+    $$("[data-bought-same]").forEach(b=>b.onclick=()=>openSameItem(Number(b.dataset.boughtSame)));
+    $$("[data-replace-shop]").forEach(b=>b.onclick=()=>openReplaceItem(Number(b.dataset.replaceShop)));
+    $$("[data-remove-shop]").forEach(b=>b.onclick=()=>{state.shopping=state.shopping.filter(i=>i.id!==Number(b.dataset.removeShop));save();if(activeShoppingId===Number(b.dataset.removeShop))hideShoppingPurchasePanels();renderShopping();});
   }
 
   $("#resetInventory").onclick=()=>{
