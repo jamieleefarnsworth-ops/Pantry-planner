@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v4.7</title>
+<title>Pantry Planner v4.8</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,10 +47,10 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4.7</h1>
+      <h1>Pantry Planner v4.8</h1>
       <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
     </div>
-    <button id="resetAll" class="btn danger" type="button">Reset all data</button>
+
   </div>
 
   <div class="tabs">
@@ -65,7 +65,7 @@
     <div class="panel">
       <div class="between">
         <div><h2>Food inventory</h2><p class="muted">Add or edit ingredients you have on hand.</p></div>
-        <span id="inventoryCount" class="badge">0 items</span>
+        <div class="row"><span id="inventoryCount" class="badge">0 items</span><button id="resetInventory" class="btn danger" type="button">Reset inventory</button></div>
       </div>
       <form id="inventoryForm" class="grid">
         <label>Food name<input id="foodName" required placeholder="Chicken breast"></label>
@@ -89,8 +89,10 @@
 
   <section id="household" class="tab-panel hidden">
     <div class="panel">
-      <h2>Household profiles</h2>
-      <p class="muted">Set calorie limits by meal so portions can be scaled automatically.</p>
+      <div class="between">
+        <div><h2>Household profiles</h2><p class="muted">Set calorie limits by meal so portions can be scaled automatically.</p></div>
+        <button id="resetHousehold" class="btn danger" type="button">Reset household</button>
+      </div>
       <form id="personForm" class="grid">
         <label>Name<input id="personName" required placeholder="Jamie"></label>
         <label>Breakfast max<input id="personBreakfast" type="number" min="0" value="500"></label>
@@ -99,7 +101,10 @@
         <label>Snack max<input id="personSnack" type="number" min="0" value="200"></label>
         <label>Daily target<input id="personDaily" type="number" min="0" value="1800"></label>
         <label>Protein target (g)<input id="personProtein" type="number" min="0" value="100"></label>
-        <div style="align-self:end"><button class="btn primary" type="submit">Add person</button></div>
+        <div class="row" style="align-self:end">
+          <button id="savePersonBtn" class="btn primary" type="submit">Add person</button>
+          <button id="cancelPersonEditBtn" class="btn hidden" type="button">Cancel edit</button>
+        </div>
       </form>
       <div id="personMsg" class="status muted small"></div>
     </div>
@@ -193,6 +198,7 @@
 
   let state = load();
   let editingFoodId = null;
+  let editingPersonId = null;
 
   function load(){
     try{
@@ -234,10 +240,14 @@
       <div class="card">
         <div class="between">
           <div><h3>${esc(p.name)}</h3><p class="muted small">Daily ${p.daily} cal · ${p.protein}g protein</p></div>
-          <button class="btn danger" data-remove-person="${p.id}">Remove</button>
+          <div class="row">
+            <button class="btn" data-edit-person="${p.id}">Edit</button>
+            <button class="btn danger" data-remove-person="${p.id}">Remove</button>
+          </div>
         </div>
         <div class="small">Breakfast ${p.breakfast} · Lunch ${p.lunch} · Dinner ${p.dinner} · Snack ${p.snack}</div>
       </div>`).join("") : '<p class="muted">No household members yet.</p>';
+    $$("[data-edit-person]").forEach(b=>b.onclick=()=>startPersonEdit(Number(b.dataset.editPerson)));
     $$("[data-remove-person]").forEach(b=>b.onclick=()=>{
       state.people=state.people.filter(p=>p.id!==Number(b.dataset.removePerson));
       save(); renderPeople(); syncOwners(); renderCustomMealOptions();
@@ -334,16 +344,62 @@
     save(); cancelEdit(); renderFoods();
   };
 
+  function startPersonEdit(id){
+    const p=state.people.find(x=>x.id===id); if(!p) return;
+    editingPersonId=id;
+    $("#personName").value=p.name;
+    $("#personBreakfast").value=p.breakfast; $("#personLunch").value=p.lunch;
+    $("#personDinner").value=p.dinner; $("#personSnack").value=p.snack;
+    $("#personDaily").value=p.daily; $("#personProtein").value=p.protein;
+    $("#savePersonBtn").textContent="Save changes";
+    $("#cancelPersonEditBtn").classList.remove("hidden");
+    $("#personMsg").textContent=`Editing ${p.name}`;
+    $("#personName").focus();
+  }
+
+  function cancelPersonEdit(){
+    editingPersonId=null;
+    $("#personForm").reset();
+    $("#savePersonBtn").textContent="Add person";
+    $("#cancelPersonEditBtn").classList.add("hidden");
+    $("#personMsg").textContent="";
+  }
+  $("#cancelPersonEditBtn").onclick=cancelPersonEdit;
+
   $("#personForm").onsubmit=e=>{
     e.preventDefault();
     const name=$("#personName").value.trim(); if(!name) return;
-    state.people.push({
-      id:Date.now(),name,
+    const obj={
+      id:editingPersonId ?? Date.now(),name,
       breakfast:num($("#personBreakfast").value),lunch:num($("#personLunch").value),
       dinner:num($("#personDinner").value),snack:num($("#personSnack").value),
       daily:num($("#personDaily").value),protein:num($("#personProtein").value)
-    });
-    save(); e.target.reset(); $("#personMsg").textContent=`Added ${name}.`; renderPeople();
+    };
+    if(editingPersonId){
+      const i=state.people.findIndex(p=>p.id===editingPersonId);
+      if(i>=0){
+        const oldName=state.people[i].name;
+        state.people[i]=obj;
+        if(oldName!==name){
+          state.foods.forEach(f=>{ if(f.owner===oldName) f.owner=name; });
+          customMeal.forEach(item=>{
+            if(Array.isArray(item.people)) item.people=item.people.map(n=>n===oldName?name:n);
+            if(item.person===oldName) item.person=name;
+          });
+          if(Array.isArray(customSelectedPeople)) customSelectedPeople=customSelectedPeople.map(n=>n===oldName?name:n);
+        }
+      }
+      $("#personMsg").textContent=`Updated ${name}.`;
+    }else{
+      state.people.push(obj);
+      $("#personMsg").textContent=`Added ${name}.`;
+    }
+    save();
+    editingPersonId=null;
+    $("#personForm").reset();
+    $("#savePersonBtn").textContent="Add person";
+    $("#cancelPersonEditBtn").classList.add("hidden");
+    renderPeople(); renderFoods(); renderCustomMealOptions(); renderCustomMeal();
   };
 
   function mealLimit(p,type){ return p[type.toLowerCase()] || 500; }
@@ -575,9 +631,30 @@
     $$("[data-shop]").forEach(b=>b.onclick=()=>{state.shopping=state.shopping.filter(i=>i.id!==Number(b.dataset.shop));save();renderShopping();});
   }
 
-  $("#resetAll").onclick=()=>{
-    if(confirm("Reset Pantry Planner and erase saved data on this device?")){
-      state=JSON.parse(JSON.stringify(seed)); editingFoodId=null; save(); renderAll(); cancelEdit(); alert("Pantry Planner has been reset.");
+  $("#resetInventory").onclick=()=>{
+    if(confirm("Reset inventory? This will permanently erase all inventory items and the entire shopping list.")){
+      state.foods=[];
+      state.shopping=[];
+      state.lastMealSignatures=[];
+      editingFoodId=null;
+      customMeal=[];
+      save();
+      cancelEdit();
+      renderFoods(); renderShopping(); renderCustomMealOptions(); renderCustomMeal();
+      alert("Inventory and shopping list have been reset.");
+    }
+  };
+
+  $("#resetHousehold").onclick=()=>{
+    if(confirm("Reset household? This will permanently erase all household members.")){
+      state.people=[];
+      editingPersonId=null;
+      customSelectedPeople=[];
+      customMeal=[];
+      save();
+      cancelPersonEdit();
+      renderPeople(); renderCustomMealOptions(); renderCustomMeal();
+      alert("Household has been reset.");
     }
   };
 
