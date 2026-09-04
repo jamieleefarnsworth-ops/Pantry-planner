@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v4.9</title>
+<title>Pantry Planner v5.0</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -47,8 +47,9 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v4.9</h1>
-      <p class="muted">Local-save version. Your data stays in this browser on this device.</p>
+      <h1>Pantry Planner v5.0</h1>
+      <p class="muted">Shared household version. Changes sync between connected devices.</p>
+      <div id="syncStatus" class="badge">Connecting…</div>
     </div>
 
   </div>
@@ -185,9 +186,13 @@
   </section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (() => {
   const STORAGE_KEY = "pantryPlannerV4";
+  const SUPABASE_URL = "https://melincekmtfytfwdgdqa.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9cxk75LRH8rYcMOBrp5IgA_3vfJWl0a";
+  const SHARED_ROW_ID = 1;
   const seed = {
     people:[
       {id:1,name:"Jamie",breakfast:500,lunch:500,dinner:500,snack:200,daily:1800,protein:100},
@@ -203,27 +208,108 @@
     generateCount:0
   };
 
-  let state = load();
+  let state = loadLocal();
   let editingFoodId = null;
   let editingPersonId = null;
+  let cloudReady = false;
+  let remoteSaveTimer = null;
+  let realtimeChannel = null;
+  let db = null;
 
-  function load(){
+  function normalizeState(loaded){
+    loaded = loaded && typeof loaded === "object" ? loaded : structuredClone(seed);
+    loaded.foods = (loaded.foods||[]).map(f=>{
+      const migratedDays = f.useDays!=null ? Number(f.useDays) : (f.soon==="Yes" ? 4 : 8);
+      const mealTypes = Array.isArray(f.mealTypes) && f.mealTypes.length ? f.mealTypes.filter(t=>["Breakfast","Lunch","Dinner"].includes(t)) : ["Breakfast","Lunch","Dinner"];
+      return {...f,mealTypes,owner:f.owner==="Both"?"Everyone":f.owner,carbs:Number(f.carbs)||0,fat:Number(f.fat)||0,useDays:migratedDays,useSetAt:Number(f.useSetAt)||Date.now()};
+    });
+    loaded.shopping = loaded.shopping||[];
+    loaded.people = loaded.people||[];
+    loaded.lastMealSignatures = loaded.lastMealSignatures||[];
+    loaded.generateCount = loaded.generateCount||0;
+    return loaded;
+  }
+
+  function loadLocal(){
     try{
       const raw=localStorage.getItem(STORAGE_KEY);
-      const loaded = raw ? JSON.parse(raw) : structuredClone(seed);
-      loaded.foods = (loaded.foods||[]).map(f=>{
-        const migratedDays = f.useDays!=null ? Number(f.useDays) : (f.soon==="Yes" ? 4 : 8);
-        const mealTypes = Array.isArray(f.mealTypes) && f.mealTypes.length ? f.mealTypes.filter(t=>["Breakfast","Lunch","Dinner"].includes(t)) : ["Breakfast","Lunch","Dinner"];
-        return {...f,mealTypes,owner:f.owner==="Both"?"Everyone":f.owner,carbs:Number(f.carbs)||0,fat:Number(f.fat)||0,useDays:migratedDays,useSetAt:Number(f.useSetAt)||Date.now()};
-      });
-      loaded.shopping = loaded.shopping||[];
-      loaded.people = loaded.people||[];
-      loaded.lastMealSignatures = loaded.lastMealSignatures||[];
-      loaded.generateCount = loaded.generateCount||0;
-      return loaded;
-    }catch(e){ return JSON.parse(JSON.stringify(seed)); }
+      return normalizeState(raw ? JSON.parse(raw) : structuredClone(seed));
+    }catch(e){ return normalizeState(structuredClone(seed)); }
   }
-  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+  function cacheLocal(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function setSyncStatus(text, mode=""){
+    const el=document.querySelector("#syncStatus");
+    if(!el) return;
+    el.textContent=text;
+    el.style.borderColor = mode==="error" ? "var(--danger)" : mode==="ok" ? "var(--accent)" : "var(--border)";
+  }
+
+  function save(){
+    cacheLocal();
+    if(!cloudReady || !db) return;
+    setSyncStatus("Saving…");
+    clearTimeout(remoteSaveTimer);
+    remoteSaveTimer=setTimeout(async()=>{
+      const snapshot=JSON.parse(JSON.stringify(state));
+      const {error}=await db.from("pantry_planner").update({app_data:snapshot,updated_at:new Date().toISOString()}).eq("id",SHARED_ROW_ID);
+      if(error){
+        console.error("Pantry Planner cloud save failed",error);
+        setSyncStatus("Saved on this phone only", "error");
+      }else{
+        setSyncStatus("Synced", "ok");
+      }
+    },250);
+  }
+
+  function hasSharedData(data){
+    return !!(data && typeof data==="object" && (Array.isArray(data.foods) || Array.isArray(data.people) || Array.isArray(data.shopping)));
+  }
+
+  async function initCloud(){
+    if(!window.supabase || !window.supabase.createClient){
+      setSyncStatus("Offline — saved on this phone", "error");
+      return;
+    }
+    try{
+      db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+      setSyncStatus("Connecting…");
+      const {data,error}=await db.from("pantry_planner").select("app_data,updated_at").eq("id",SHARED_ROW_ID).single();
+      if(error) throw error;
+
+      if(hasSharedData(data?.app_data)){
+        state=normalizeState(data.app_data);
+        cacheLocal();
+        renderAll();
+      }else{
+        const localSnapshot=JSON.parse(JSON.stringify(state));
+        const {error:uploadError}=await db.from("pantry_planner").update({app_data:localSnapshot,updated_at:new Date().toISOString()}).eq("id",SHARED_ROW_ID);
+        if(uploadError) throw uploadError;
+      }
+
+      cloudReady=true;
+      setSyncStatus("Synced", "ok");
+
+      realtimeChannel=db.channel("pantry-planner-shared")
+        .on("postgres_changes",{event:"UPDATE",schema:"public",table:"pantry_planner",filter:`id=eq.${SHARED_ROW_ID}`},payload=>{
+          const incoming=payload?.new?.app_data;
+          if(!hasSharedData(incoming)) return;
+          state=normalizeState(incoming);
+          cacheLocal();
+          renderAll();
+          setSyncStatus("Synced", "ok");
+        })
+        .subscribe(status=>{
+          if(status==="SUBSCRIBED") setSyncStatus("Synced", "ok");
+        });
+    }catch(e){
+      console.error("Pantry Planner cloud connection failed",e);
+      setSyncStatus("Offline — saved on this phone", "error");
+    }
+  }
 
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -672,6 +758,7 @@
 
   function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();}
   renderAll();
+  initCloud();
 })();
 </script>
 </body>
