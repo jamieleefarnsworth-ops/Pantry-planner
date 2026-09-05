@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v6.1</title>
+<title>Pantry Planner v6.2</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="theme-color" content="#0b5f34" />
@@ -74,7 +74,7 @@
 <div class="wrap">
   <div class="app-header">
     <img class="app-icon" src="icon-192.png" alt="Pantry Planner icon">
-    <h1>Pantry Planner v6.1</h1>
+    <h1>Pantry Planner v6.2</h1>
     <p class="muted">Shared household version. Changes sync between connected devices.</p>
     <div id="syncStatus" class="badge">Connecting…</div>
   </div>
@@ -189,9 +189,9 @@
 
       <div id="customMealBuilder" class="hidden">
         <h2>Build my own meal</h2>
-        <p class="muted small">Pick an ingredient, servings, and who is eating it. When you use the meal, Pantry Planner remembers that ingredient combination and prefers it in future generated meals. Learned meals are normalized to 1 serving of each item per person.</p>
+        <p class="muted small">Pick an ingredient, servings, and who is eating it. Breakfast, Lunch, and Dinner combinations are learned and preferred in future generated meals. Snack/Drink entries still track inventory and nutrition, but are never learned. Learned meals are normalized to 1 serving of each item per person.</p>
         <div class="grid">
-          <label>Meal<select id="customMealType"><option>Breakfast</option><option>Lunch</option><option>Dinner</option></select></label>
+          <label>Meal<select id="customMealType"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack/Drink</option></select></label>
           <label>Ingredient<select id="customFood"></select></label>
           <label>Servings<input id="customServings" type="number" min="0.25" step="0.25" placeholder="1"></label>
           <div>
@@ -349,7 +349,7 @@
       id:m.id||Date.now()+Math.random(),
       createdAt:Number(m.createdAt)||Date.now(),
       updatedAt:Number(m.updatedAt)||Number(m.createdAt)||Date.now(),
-      mealType:["Breakfast","Lunch","Dinner"].includes(m.mealType)?m.mealType:"Dinner",
+      mealType:["Breakfast","Lunch","Dinner","Snack/Drink"].includes(m.mealType)?m.mealType:"Dinner",
       source:m.source||"custom",
       learnedKeys:Array.isArray(m.learnedKeys)?m.learnedKeys:[],
       items:Array.isArray(m.items)?m.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings)||0,people:Array.isArray(i.people)?i.people:[]})).filter(i=>Number.isFinite(i.foodId)&&i.servings>0&&i.people.length):[]
@@ -1001,6 +1001,7 @@
   }
 
   function addLearningContribution(items,type){
+    if(type==="Snack/Drink") return [];
     const now=Date.now(), keys=[];
     for(const sig of mealLearningSignatures(items,type)){
       const existing=(state.learnedMeals||[]).find(m=>m.mealType===type && (m.foodIds||[]).slice().sort((a,b)=>a-b).join(",")===sig.ids.join(","));
@@ -1373,7 +1374,7 @@
       if(!adj.ok){alert(`${adj.name} does not have enough servings available for this edit.`);renderCustomMealOptions();return;}
       removeLearningContribution(meal.learnedKeys||[]);
       meal.items=newItems; meal.mealType=type; meal.updatedAt=Date.now();
-      meal.learnedKeys=meal.source==="custom"?addLearningContribution(newItems,type):[];
+      meal.learnedKeys=meal.source==="custom" && type!=="Snack/Drink" ? addLearningContribution(newItems,type) : [];
       save(); renderFoods(); renderShopping(); renderTodayMealLog();
       exitLoggedMealEdit();
       $("#customMealTotals").textContent="Meal changes saved. Inventory and learning were updated.";
@@ -1382,7 +1383,7 @@
     const usage=usageForItems(customMeal);
     const insufficient=Object.entries(usage).find(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); return !f||Number(f.qty)<amt;});
     if(insufficient){ alert("Inventory changed and this meal no longer fits. Please adjust the meal."); renderCustomMealOptions(); return; }
-    logMeal(customMeal,type,"custom",true);
+    logMeal(customMeal,type,"custom",type!=="Snack/Drink");
     applyUsage(usage);
     customMeal=[]; renderCustomMeal(); renderTodayMealLog();
     $("#customMealTotals").textContent="Meal logged. Inventory updated; anything that reached zero was added to Shopping List.";
