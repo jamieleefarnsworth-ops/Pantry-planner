@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.6</title>
+<title>Pantry Planner v5.7</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.6</h1>
+      <h1>Pantry Planner v5.7</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -610,19 +610,37 @@
     const role=inferFoodRole(candidate);
     let v=0;
     const has=(text,re)=>re.test(text);
-    if(has(a,/hot dog|hotdog|frank|sausage/)){
-      if(has(b,/bun|roll/)) v+=100;
-      if(has(b,/ketchup|mustard|relish/)) v+=80;
+    const isHotDogBun=text=>has(text,/hot\s*dog\s*bun|frank\s*bun|frankfurter\s*bun/);
+    const isBurgerBun=text=>has(text,/hamburger\s*bun|burger\s*bun/);
+    const isPasta=text=>has(text,/spaghetti|pasta|macaroni|elbow|farfalle|penne|rigatoni|rotini|linguine|fettuccine|noodle/);
+    const isPastaSauce=text=>has(text,/pasta\s*sauce|spaghetti\s*sauce|marinara|tomato\s*sauce|alfredo|vodka\s*sauce/);
+
+    // Strong, specific pairings. A matching bun is heavily preferred and the
+    // wrong style of bun is penalized so franks do not get hamburger buns and
+    // ground beef does not get hot-dog buns when both names are clear.
+    if(has(a,/hot dog|hotdog|frank|frankfurter/)){
+      if(isHotDogBun(b)) v+=180;
+      else if(isBurgerBun(b)) v-=120;
+      else if(has(b,/bun|roll/)) v+=55;
+      if(has(b,/ketchup|mustard|relish/)) v+=90;
     }
     if(has(a,/burger|hamburger|ground beef|beef patty/)){
-      if(has(b,/bun|roll/)) v+=100;
-      if(has(b,/cheese|ketchup|mustard|mayo|relish/)) v+=70;
+      if(isBurgerBun(b)) v+=180;
+      else if(isHotDogBun(b)) v-=120;
+      else if(has(b,/bun|roll/)) v+=55;
+      if(has(b,/cheese|ketchup|mustard|mayo|relish/)) v+=80;
+      // Ground beef can also sensibly become a pasta meal.
+      if(isPasta(b)) v+=105;
     }
-    if(has(a,/spaghetti|pasta|macaroni|farfalle|noodle/)){
-      if(has(b,/sauce|marinara|tomato sauce/)) v+=100;
-      if(has(b,/parmesan|cheese/)) v+=75;
-      if(has(b,/ground beef|meatball|sausage|chicken/)) v+=60;
+    if(isPasta(a)){
+      if(isPastaSauce(b)) v+=180;
+      if(has(b,/parmesan|cheese/)) v+=85;
+      if(has(b,/ground beef|meatball|sausage|chicken/)) v+=90;
     }
+    // Make the pasta relationship work in either direction, so a meat anchor
+    // can still discover pasta and sauce instead of requiring pasta to be the anchor.
+    if(isPasta(b) && has(a,/ground beef|meatball|sausage|chicken/)) v+=90;
+    if(isPastaSauce(b) && (isPasta(a) || has(a,/ground beef|meatball|sausage/))) v+=115;
     if(has(a,/chicken|steak|pork|turkey|fish|salmon/)){
       if(has(b,/rice|potato|vegetable|veggie|broccoli|carrot/)) v+=60;
     }
