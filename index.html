@@ -661,17 +661,16 @@
     if(!anchor) return {person,limit,items,totalCal,totalProtein,totalCarbs,totalFat};
 
     const addFood=(f,servings=1)=>{
-      const max=Math.min(Math.floor(available(f.id)),Math.floor((limit-totalCal)/Math.max(1,Number(f.cal)||1)));
+      // Generated meals use at most one serving of any inventory item per person per meal.
+      if(items.some(i=>i.food.id===f.id)) return false;
+      const max=Math.min(1,Math.floor(available(f.id)),Math.floor((limit-totalCal)/Math.max(1,Number(f.cal)||1)));
       servings=Math.min(servings,max);
       if(servings<1) return false;
       const c=Math.round(servings*f.cal),pr=servings*f.protein,cb=servings*(f.carbs||0),ft=servings*(f.fat||0);
       items.push({food:f,servings,c,pr,cb,ft}); totalCal+=c; totalProtein+=pr; totalCarbs+=cb; totalFat+=ft; return true;
     };
 
-    let anchorServings=1;
-    const maxAnchor=Math.min(Math.floor(available(anchor.id)),Math.floor(limit/Math.max(1,anchor.cal)));
-    if(maxAnchor>=2 && anchor.cal*2<=limit*0.78 && Number(anchor.protein)>=10) anchorServings=2;
-    addFood(anchor,anchorServings);
+    addFood(anchor,1);
 
     const usedRoles=new Set(items.map(i=>inferFoodRole(i.food)));
     const candidates=eligible(person,type,stock).filter(f=>f.id!==anchor.id)
