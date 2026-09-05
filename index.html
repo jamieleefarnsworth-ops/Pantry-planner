@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.8</title>
+<title>Pantry Planner v5.9</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.8</h1>
+      <h1>Pantry Planner v5.9</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -152,8 +152,9 @@
 
       <div id="customMealBuilder" class="hidden">
         <h2>Build my own meal</h2>
-        <p class="muted small">Pick an ingredient, servings, and who is eating it. Add as many items as you want.</p>
+        <p class="muted small">Pick an ingredient, servings, and who is eating it. When you use the meal, Pantry Planner remembers that ingredient combination and prefers it in future generated meals. Learned meals are normalized to 1 serving of each item per person.</p>
         <div class="grid">
+          <label>Meal<select id="customMealType"><option>Breakfast</option><option>Lunch</option><option>Dinner</option></select></label>
           <label>Ingredient<select id="customFood"></select></label>
           <label>Servings<input id="customServings" type="number" min="0.25" step="0.25" placeholder="1"></label>
           <div>
@@ -271,6 +272,7 @@
       {id:3,name:"Oikos yogurt",qty:4,cal:80,protein:15,carbs:7,fat:0,mealTypes:["Breakfast","Lunch","Dinner"],owner:"Everyone",useDays:4,useSetAt:Date.now()}
     ],
     shopping:[],
+    learnedMeals:[],
     lastMealSignatures:[],
     generateCount:0
   };
@@ -293,6 +295,13 @@
     });
     loaded.shopping = loaded.shopping||[];
     loaded.people = loaded.people||[];
+    loaded.learnedMeals = Array.isArray(loaded.learnedMeals) ? loaded.learnedMeals.map(m=>({
+      id:m.id||Date.now()+Math.random(),
+      mealType:["Breakfast","Lunch","Dinner"].includes(m.mealType)?m.mealType:"Dinner",
+      foodIds:Array.isArray(m.foodIds)?[...new Set(m.foodIds.map(Number).filter(Number.isFinite))]:[],
+      uses:Math.max(1,Number(m.uses)||1),
+      lastUsedAt:Number(m.lastUsedAt)||Date.now()
+    })).filter(m=>m.foodIds.length>=2) : [];
     loaded.lastMealSignatures = loaded.lastMealSignatures||[];
     loaded.generateCount = loaded.generateCount||0;
     return loaded;
@@ -664,6 +673,50 @@
     if(role==="Sauce / Condiment") v+=5;
     return v;
   }
+  function buildMealFromLearnedPattern(person,type,pattern,stock=null){
+    if(!pattern || pattern.mealType!==type) return null;
+    const ids=[...new Set((pattern.foodIds||[]).map(Number))];
+    if(ids.length<2) return null;
+    const limit=mealLimit(person,type);
+    const available=id=>stock?Number(stock[id]||0):Number(state.foods.find(f=>f.id===id)?.qty||0);
+    let totalCal=0,totalProtein=0,totalCarbs=0,totalFat=0;
+    const items=[];
+    for(const id of ids){
+      const f=state.foods.find(x=>x.id===id);
+      if(!f || available(id)<1) return null;
+      if(!(f.owner==="Everyone"||f.owner==="Both"||f.owner===person.name)) return null;
+      if(!(f.mealTypes||[]).includes(type)) return null;
+      const c=Number(f.cal)||0;
+      if(totalCal+c>limit) return null;
+      const pr=Number(f.protein)||0,cb=Number(f.carbs)||0,ft=Number(f.fat)||0;
+      items.push({food:f,servings:1,c:Math.round(c),pr,cb,ft});
+      totalCal+=c; totalProtein+=pr; totalCarbs+=cb; totalFat+=ft;
+    }
+    return {person,limit,items,totalCal:Math.round(totalCal),totalProtein,totalCarbs,totalFat,learned:true,learnedId:pattern.id};
+  }
+
+  function learnedPatternsFor(type){
+    return (state.learnedMeals||[]).filter(m=>m.mealType===type)
+      .sort((a,b)=>(Number(b.uses)||0)-(Number(a.uses)||0) || (Number(b.lastUsedAt)||0)-(Number(a.lastUsedAt)||0));
+  }
+
+  function learnedGroupOptions(type,people){
+    const options=[];
+    for(const pattern of learnedPatternsFor(type)){
+      const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
+      const result=[];
+      let valid=true;
+      for(const person of people){
+        const meal=buildMealFromLearnedPattern(person,type,pattern,stock);
+        if(!meal){ valid=false; break; }
+        meal.items.forEach(i=>stock[i.food.id]=Math.max(0,stock[i.food.id]-1));
+        result.push(meal);
+      }
+      if(valid) options.push(result);
+    }
+    return options;
+  }
+
   function chooseAnchor(person,type,priority,seedv,stock=null){
     const foods=eligible(person,type,stock);
     if(!foods.length) return null;
@@ -810,6 +863,12 @@
 
   function buildGeneratedCombinationOptions(type,priority,people){
     const seen=new Set(), options=[];
+    // Meals learned from Build My Own are offered first, while still obeying
+    // inventory, ownership, meal-type, calorie, and 1-serving-per-item rules.
+    for(const learned of learnedGroupOptions(type,people)){
+      const sig=signature(learned);
+      if(!seen.has(sig)){ seen.add(sig); options.push(learned); }
+    }
     let stale=0;
     // Search a wide deterministic seed range and keep every unique meal the
     // current generator can produce. Once a long stretch produces nothing
@@ -991,6 +1050,32 @@
     $("#useCustomMeal").disabled=false;
   }
 
+  function learnCurrentCustomMeal(){
+    const type=$("#customMealType")?.value || $("#mealType")?.value || defaultMealTypeForCurrentTime();
+    const signatures=new Map();
+    for(const person of householdNames()){
+      const ids=[...new Set(customMeal.filter(i=>customPeopleForItem(i).includes(person)).map(i=>Number(i.foodId)))].sort((a,b)=>a-b);
+      if(ids.length<2) continue;
+      signatures.set(ids.join(","),ids);
+    }
+    if(!signatures.size){
+      const ids=[...new Set(customMeal.map(i=>Number(i.foodId)))].sort((a,b)=>a-b);
+      if(ids.length>=2) signatures.set(ids.join(","),ids);
+    }
+    const now=Date.now();
+    for(const ids of signatures.values()){
+      const existing=(state.learnedMeals||[]).find(m=>m.mealType===type && (m.foodIds||[]).slice().sort((a,b)=>a-b).join(",")===ids.join(","));
+      if(existing){ existing.uses=(Number(existing.uses)||1)+1; existing.lastUsedAt=now; }
+      else state.learnedMeals.push({id:now+Math.random(),mealType:type,foodIds:ids,uses:1,lastUsedAt:now});
+    }
+    if(state.learnedMeals.length>100){
+      state.learnedMeals.sort((a,b)=>(Number(b.lastUsedAt)||0)-(Number(a.lastUsedAt)||0));
+      state.learnedMeals=state.learnedMeals.slice(0,100);
+    }
+    resetGeneratedCombinationCycle();
+    resetPlanCombinationCycle();
+  }
+
   $("#showGeneratedMeal").onclick=()=>{
     $("#generatedMealBuilder").classList.remove("hidden"); $("#customMealBuilder").classList.add("hidden"); $("#mealResult").classList.remove("hidden");
     $("#showGeneratedMeal").classList.add("active"); $("#showCustomMeal").classList.remove("active");
@@ -1024,6 +1109,10 @@
     const usage={}; customMeal.forEach(i=>usage[i.foodId]=(usage[i.foodId]||0)+(i.servings*customMultiplier(i)));
     const insufficient=Object.entries(usage).find(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); return !f||f.qty<amt;});
     if(insufficient){ alert("Inventory changed and this meal no longer fits. Please adjust the meal."); renderCustomMealOptions(); return; }
+    // Remember the ingredient relationship before inventory quantities change.
+    // Serving amounts are normalized: the generator will use at most 1 serving
+    // of each learned item per person.
+    learnCurrentCustomMeal();
     applyUsage(usage);
     customMeal=[]; renderCustomMeal();
     $("#customMealTotals").textContent="Meal used. Inventory updated; anything that reached zero was added to Shopping List.";
@@ -1133,6 +1222,7 @@
   function buildThreeDayPlan(people,variation){
     const types=["Breakfast","Lunch","Dinner"];
     const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
+    const usedLearnedPatterns=new Set();
     const days=[];
     for(let day=1;day<=3;day++){
       const mealGroups=[];
@@ -1141,7 +1231,21 @@
         for(let j=0;j<people.length;j++){
           const person=people[j];
           const seed=variation*1000+day*100+i*10+j;
-          const meal=buildPersonMeal(person,type,"balanced",seed,stock);
+          let meal=null;
+          // The earliest plan variations prefer meals learned from Build My Own.
+          // Later retries fall back to the normal generator so learned meals do
+          // not crowd out every other valid possibility.
+          const learned=learnedPatternsFor(type);
+          if(learned.length && variation<=learned.length){
+            for(let k=0;k<learned.length;k++){
+              const pattern=learned[(variation-1+day-1+i+j+k)%learned.length];
+              const learnedKey=`${person.id}:${type}:${pattern.id}`;
+              if(usedLearnedPatterns.has(learnedKey)) continue;
+              meal=buildMealFromLearnedPattern(person,type,pattern,stock);
+              if(meal){ usedLearnedPatterns.add(learnedKey); break; }
+            }
+          }
+          if(!meal) meal=buildPersonMeal(person,type,"balanced",seed,stock);
           meal.items.forEach(item=>stock[item.food.id]=Math.max(0,stock[item.food.id]-item.servings));
           entries.push({id:`${variation}-${day}-${i}-${person.id}`,used:false,meal});
         }
@@ -1293,16 +1397,17 @@
   }
 
   $("#resetInventory").onclick=()=>{
-    if(confirm("Reset inventory? This will permanently erase all inventory items and the entire shopping list.")){
+    if(confirm("Reset inventory? This will permanently erase all inventory items, the shopping list, and learned meal combinations.")){
       state.foods=[];
       state.shopping=[];
+      state.learnedMeals=[];
       state.lastMealSignatures=[];
       editingFoodId=null;
       customMeal=[];
       save();
       cancelEdit();
       renderFoods(); renderShopping(); renderCustomMealOptions(); renderCustomMeal();
-      alert("Inventory and shopping list have been reset.");
+      alert("Inventory, shopping list, and learned meal combinations have been reset.");
     }
   };
 
@@ -1329,9 +1434,11 @@
   }
 
   function applyTimeBasedMealDefault(){
+    const type=defaultMealTypeForCurrentTime();
     const select=$("#mealType");
-    if(!select) return;
-    select.value=defaultMealTypeForCurrentTime();
+    if(select) select.value=type;
+    const customSelect=$("#customMealType");
+    if(customSelect) customSelect.value=type;
     resetGeneratedCombinationCycle();
   }
 
