@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.3</title>
+<title>Pantry Planner v5.4</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.3</h1>
+      <h1>Pantry Planner v5.4</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -748,6 +748,8 @@
       addToShoppingIfNeeded(f);
     });
     save(); renderFoods(); renderShopping(); renderCustomMealOptions();
+    resetGeneratedCombinationCycle();
+    resetPlanCombinationCycle();
   }
 
   function renderMeal(result,type){
@@ -765,6 +767,49 @@
   }
 
   let generatedSelectedPeople=null;
+  let generatedCombinationCycle={key:null,options:[],index:0};
+
+  function generatedContextKey(type,priority,people){
+    return JSON.stringify({
+      type,priority,people:people.map(p=>p.id),
+      foods:state.foods.map(f=>[f.id,f.qty,f.cal,f.protein,f.carbs,f.fat,f.owner,(f.mealTypes||[]).join(","),f.role,f.useDays,f.useSetAt])
+    });
+  }
+
+  function buildGeneratedCombinationOptions(type,priority,people){
+    const seen=new Set(), options=[];
+    let stale=0;
+    // Search a wide deterministic seed range and keep every unique meal the
+    // current generator can produce. Once a long stretch produces nothing
+    // new, the reachable combination set is considered exhausted.
+    for(let seedv=1;seedv<=5000 && stale<750;seedv++){
+      const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
+      const r=people.map((p,idx)=>{
+        const meal=buildPersonMeal(p,type,priority,seedv+idx,stock);
+        meal.items.forEach(i=>stock[i.food.id]=Math.max(0,stock[i.food.id]-i.servings));
+        return meal;
+      });
+      const sig=signature(r);
+      if(!seen.has(sig)){ seen.add(sig); options.push(r); stale=0; }
+      else stale++;
+    }
+    return options;
+  }
+
+  function resetGeneratedCombinationCycle(){
+    generatedCombinationCycle={key:null,options:[],index:0};
+    const b=$("#generateMeal");
+    if(b){ b.disabled=false; b.textContent="Generate meal"; }
+  }
+
+  function nextGeneratedCombination(type,priority,people){
+    const key=generatedContextKey(type,priority,people);
+    if(generatedCombinationCycle.key!==key){
+      generatedCombinationCycle={key,options:buildGeneratedCombinationOptions(type,priority,people),index:0};
+    }
+    if(generatedCombinationCycle.index>=generatedCombinationCycle.options.length) return null;
+    return generatedCombinationCycle.options[generatedCombinationCycle.index++];
+  }
 
   function ensureGeneratedPeopleSelection(){
     const ids=state.people.map(p=>p.id);
@@ -791,7 +836,7 @@
     $$("#generatedPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{
       generatedSelectedPeople=selectedGeneratedPeople();
       state.lastMealSignatures=[];
-      $("#generateMeal").textContent="Generate meal";
+      resetGeneratedCombinationCycle();
       save();
     });
   }
@@ -799,12 +844,12 @@
   $("#selectAllGeneratedPeople").onclick=()=>{
     generatedSelectedPeople=state.people.map(p=>p.id);
     renderGeneratedPeoplePicker();
-    state.lastMealSignatures=[]; $("#generateMeal").textContent="Generate meal"; save();
+    state.lastMealSignatures=[]; resetGeneratedCombinationCycle(); save();
   };
   $("#clearGeneratedPeople").onclick=()=>{
     generatedSelectedPeople=[];
     renderGeneratedPeoplePicker();
-    state.lastMealSignatures=[]; $("#generateMeal").textContent="Generate meal"; save();
+    state.lastMealSignatures=[]; resetGeneratedCombinationCycle(); save();
   };
 
   $("#generateMeal").onclick=()=>{
@@ -812,9 +857,18 @@
     generatedSelectedPeople=selectedGeneratedPeople();
     const people=state.people.filter(p=>generatedSelectedPeople.includes(p.id));
     if(!people.length){ alert("Select at least one person to make a meal for."); return; }
-    renderMeal(generateDifferent(type,priority,people),type); $("#generateMeal").textContent="Try another";
+    const result=nextGeneratedCombination(type,priority,people);
+    if(!result){
+      $("#generateMeal").disabled=true;
+      $("#generateMeal").textContent="All combinations attempted";
+      return;
+    }
+    renderMeal(result,type);
+    const exhausted=generatedCombinationCycle.index>=generatedCombinationCycle.options.length;
+    $("#generateMeal").disabled=exhausted;
+    $("#generateMeal").textContent=exhausted?"All combinations attempted":"Try another";
   };
-  $("#mealType").onchange=$("#mealPriority").onchange=()=>{state.lastMealSignatures=[];$("#generateMeal").textContent="Generate meal";save();};
+  $("#mealType").onchange=$("#mealPriority").onchange=()=>{state.lastMealSignatures=[];resetGeneratedCombinationCycle();save();};
 
   let customMeal=[];
   let customSelectedPeople=null;
@@ -946,6 +1000,7 @@
   let planSelectedPeople=null;
   let currentPlan=null;
   let planBuildCount=0;
+  let planCombinationCycle={key:null,options:[],index:0};
 
   function ensurePlanPeopleSelection(){
     const ids=state.people.map(p=>p.id);
@@ -965,7 +1020,7 @@
       return;
     }
     box.innerHTML=state.people.map(p=>`<label class="person-check"><input type="checkbox" value="${p.id}" ${planSelectedPeople.includes(p.id)?'checked':''}><span>${esc(p.name)}</span></label>`).join('');
-    $$("#planPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{planSelectedPeople=selectedPlanPeople();});
+    $$("#planPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{planSelectedPeople=selectedPlanPeople();resetPlanCombinationCycle();});
   }
 
   function planEntryHtml(entry){
@@ -999,14 +1054,48 @@
     });
   }
 
-  $("#selectAllPlanPeople").onclick=()=>{planSelectedPeople=state.people.map(p=>p.id);renderPlanPeoplePicker();};
-  $("#clearPlanPeople").onclick=()=>{planSelectedPeople=[];renderPlanPeoplePicker();};
+  $("#selectAllPlanPeople").onclick=()=>{planSelectedPeople=state.people.map(p=>p.id);renderPlanPeoplePicker();resetPlanCombinationCycle();};
+  $("#clearPlanPeople").onclick=()=>{planSelectedPeople=[];renderPlanPeoplePicker();resetPlanCombinationCycle();};
 
   function mealPlanSignature(plan){
     if(!plan) return "";
     return plan.days.map(day=>day.meals.map(group=>group.entries.map(entry=>
       entry.meal.person.id+":"+entry.meal.items.map(item=>item.food.id+"x"+item.servings).join("-")
     ).join("|")).join("/")).join("//");
+  }
+
+  function planContextKey(people){
+    return JSON.stringify({
+      people:people.map(p=>p.id),
+      foods:state.foods.map(f=>[f.id,f.qty,f.cal,f.protein,f.carbs,f.fat,f.owner,(f.mealTypes||[]).join(","),f.role,f.useDays,f.useSetAt])
+    });
+  }
+
+  function resetPlanCombinationCycle(){
+    planCombinationCycle={key:null,options:[],index:0};
+    const b=$("#makePlan");
+    if(b){ b.disabled=false; b.textContent="Build 3-day plan"; }
+  }
+
+  function buildPlanCombinationOptions(people){
+    const seen=new Set(), options=[];
+    let stale=0;
+    for(let variation=1;variation<=2500 && stale<500;variation++){
+      const plan=buildThreeDayPlan(people,variation);
+      const sig=mealPlanSignature(plan);
+      if(!seen.has(sig)){ seen.add(sig); options.push(plan); stale=0; }
+      else stale++;
+    }
+    return options;
+  }
+
+  function nextPlanCombination(people){
+    const key=planContextKey(people);
+    if(planCombinationCycle.key!==key){
+      planCombinationCycle={key,options:buildPlanCombinationOptions(people),index:0};
+    }
+    if(planCombinationCycle.index>=planCombinationCycle.options.length) return null;
+    return planCombinationCycle.options[planCombinationCycle.index++];
   }
 
   function buildThreeDayPlan(people,variation){
@@ -1037,18 +1126,18 @@
     const people=state.people.filter(p=>planSelectedPeople.includes(p.id));
     if(!people.length){$("#planResult").innerHTML='<p class="muted">Select at least one household member to build a meal plan.</p>';return;}
 
-    const oldSignature=mealPlanSignature(currentPlan);
-    let nextPlan=null;
-    let attempts=0;
-    do{
-      planBuildCount++;
-      nextPlan=buildThreeDayPlan(people,planBuildCount);
-      attempts++;
-    }while(oldSignature && mealPlanSignature(nextPlan)===oldSignature && attempts<20);
+    const nextPlan=nextPlanCombination(people);
+    if(!nextPlan){
+      $("#makePlan").disabled=true;
+      $("#makePlan").textContent="All combinations attempted";
+      return;
+    }
 
     currentPlan=nextPlan;
     renderCurrentPlan();
-    $("#makePlan").textContent="Try another 3-day plan";
+    const exhausted=planCombinationCycle.index>=planCombinationCycle.options.length;
+    $("#makePlan").disabled=exhausted;
+    $("#makePlan").textContent=exhausted?"All combinations attempted":"Try another 3-day plan";
   };
 
   $("#shoppingForm").onsubmit=e=>{
