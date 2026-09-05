@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.4</title>
+<title>Pantry Planner v5.5</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.4</h1>
+      <h1>Pantry Planner v5.5</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -654,15 +654,15 @@
     const pool=preferred.length?preferred:(breakfastFallback.length?breakfastFallback:foods.filter(f=>inferFoodRole(f)!=="Sauce / Condiment"));
     if(!pool.length) return foods[0];
 
-    // Keep the choices sensible, but deliberately rotate among several good
-    // options so Try Another can produce a genuinely different meal/plan.
+    // Rank the sensible anchors by the selected priority, but do NOT discard
+    // lower-ranked valid foods. Try Another must eventually give every
+    // eligible anchor (for example ground beef) a chance before saying the
+    // combinations are exhausted.
     const ranked=pool.map(f=>({...f,_score:score(f,priority)})).sort((a,b)=>b._score-a._score);
-    const best=ranked[0]._score;
-    const tolerance=Math.max(4,Math.abs(best)*0.3);
-    let choices=ranked.filter((f,idx)=>idx<4 && f._score>=best-tolerance);
-    if(choices.length<2 && ranked.length>1) choices=ranked.slice(0,Math.min(3,ranked.length));
-    const pick=Math.floor(seededUnit(seedv,person.id*31+type.length)*choices.length);
-    return choices[pick] || ranked[0];
+    const n=Math.max(1,ranked.length);
+    const step=Math.max(0,Math.floor(Number(seedv)||1)-1);
+    const pick=step % n;
+    return ranked[pick] || ranked[0];
   }
   function buildPersonMeal(person,type,priority,seedv,stock=null){
     const limit=mealLimit(person,type), available=id=>stock?Number(stock[id]||0):Number(state.foods.find(f=>f.id===id)?.qty||0);
