@@ -871,6 +871,7 @@
 
   let planSelectedPeople=null;
   let currentPlan=null;
+  let planBuildCount=0;
 
   function ensurePlanPeopleSelection(){
     const ids=state.people.map(p=>p.id);
@@ -927,11 +928,14 @@
   $("#selectAllPlanPeople").onclick=()=>{planSelectedPeople=state.people.map(p=>p.id);renderPlanPeoplePicker();};
   $("#clearPlanPeople").onclick=()=>{planSelectedPeople=[];renderPlanPeoplePicker();};
 
-  $("#makePlan").onclick=()=>{
-    if(!state.people.length||!state.foods.length){$("#planResult").innerHTML='<p class="muted">Add people and food first.</p>';return;}
-    planSelectedPeople=selectedPlanPeople();
-    const people=state.people.filter(p=>planSelectedPeople.includes(p.id));
-    if(!people.length){$("#planResult").innerHTML='<p class="muted">Select at least one household member to build a meal plan.</p>';return;}
+  function mealPlanSignature(plan){
+    if(!plan) return "";
+    return plan.days.map(day=>day.meals.map(group=>group.entries.map(entry=>
+      entry.meal.person.id+":"+entry.meal.items.map(item=>item.food.id+"x"+item.servings).join("-")
+    ).join("|")).join("/")).join("//");
+  }
+
+  function buildThreeDayPlan(people,variation){
     const types=["Breakfast","Lunch","Dinner"];
     const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
     const days=[];
@@ -941,16 +945,36 @@
         const type=types[i],entries=[];
         for(let j=0;j<people.length;j++){
           const person=people[j];
-          const meal=buildPersonMeal(person,type,"balanced",day*100+i*10+j,stock);
+          const seed=variation*1000+day*100+i*10+j;
+          const meal=buildPersonMeal(person,type,"balanced",seed,stock);
           meal.items.forEach(item=>stock[item.food.id]=Math.max(0,stock[item.food.id]-item.servings));
-          entries.push({id:`${day}-${i}-${person.id}`,used:false,meal});
+          entries.push({id:`${variation}-${day}-${i}-${person.id}`,used:false,meal});
         }
         mealGroups.push({type,entries});
       }
       days.push({day,meals:mealGroups});
     }
-    currentPlan={days};
+    return {days};
+  }
+
+  $("#makePlan").onclick=()=>{
+    if(!state.people.length||!state.foods.length){$("#planResult").innerHTML='<p class="muted">Add people and food first.</p>';return;}
+    planSelectedPeople=selectedPlanPeople();
+    const people=state.people.filter(p=>planSelectedPeople.includes(p.id));
+    if(!people.length){$("#planResult").innerHTML='<p class="muted">Select at least one household member to build a meal plan.</p>';return;}
+
+    const oldSignature=mealPlanSignature(currentPlan);
+    let nextPlan=null;
+    let attempts=0;
+    do{
+      planBuildCount++;
+      nextPlan=buildThreeDayPlan(people,planBuildCount);
+      attempts++;
+    }while(oldSignature && mealPlanSignature(nextPlan)===oldSignature && attempts<20);
+
+    currentPlan=nextPlan;
     renderCurrentPlan();
+    $("#makePlan").textContent="Try another 3-day plan";
   };
 
   $("#shoppingForm").onsubmit=e=>{
