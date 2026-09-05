@@ -79,7 +79,7 @@
   .macro-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px}
   .macro-dot.protein{background:#4f9f6e}
   .macro-dot.carbs{background:#5f8fc7}
-  .macro-dot.fat{background:#d98a45}
+  .macro-dot.fat{background:#d9654f}
   @media(max-width:600px){.wrap{padding:10px}.btn{flex:1}.tabs .btn{flex:0 1 auto}}
 </style>
 </head>
@@ -1135,7 +1135,7 @@
       const cp=macroTotal?carbsCal/macroTotal*100:0;
       const fp=macroTotal?fatCal/macroTotal*100:0;
       const pEnd=pp, cEnd=pp+cp;
-      const pie=macroTotal?`conic-gradient(#4f9f6e 0 ${pEnd.toFixed(2)}%, #5f8fc7 ${pEnd.toFixed(2)}% ${cEnd.toFixed(2)}%, #d98a45 ${cEnd.toFixed(2)}% 100%)`:'conic-gradient(#353b44 0 100%)';
+      const pie=macroTotal?`conic-gradient(#4f9f6e 0 ${pEnd.toFixed(2)}%, #5f8fc7 ${pEnd.toFixed(2)}% ${cEnd.toFixed(2)}%, #d9654f ${cEnd.toFixed(2)}% 100%)`:'conic-gradient(#353b44 0 100%)';
       return `<div class="nutrition-card">
         <div class="nutrition-summary"><h3 style="margin-bottom:0">${esc(p.name)}</h3><strong>${cal} / ${Math.round(target)} cal</strong></div>
         <div class="nutrition-bar" role="progressbar" aria-label="${esc(p.name)} daily calories" aria-valuemin="0" aria-valuemax="${Math.round(target)}" aria-valuenow="${cal}"><div class="nutrition-bar-fill" style="width:${width.toFixed(1)}%"></div></div>
