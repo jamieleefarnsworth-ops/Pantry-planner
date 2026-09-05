@@ -579,6 +579,10 @@
     for(let i=a.length-1;i>0;i--){x=(x*233280+49297)%233280; const j=Math.floor((x/233280)*(i+1)); [a[i],a[j]]=[a[j],a[i]];}
     return a;
   }
+  function seededUnit(seed,salt=0){
+    const x=Math.sin((Number(seed)+1)*12.9898+(Number(salt)+1)*78.233)*43758.5453;
+    return x-Math.floor(x);
+  }
   function inferFoodRole(f){
     if(f.role && f.role!=="Auto") return f.role;
     const n=(f.name||"").toLowerCase();
@@ -639,9 +643,16 @@
     const breakfastFallback=type==="Breakfast" ? foods.filter(f=>["Side / Snack","Starch / Base"].includes(inferFoodRole(f))) : [];
     const pool=preferred.length?preferred:(breakfastFallback.length?breakfastFallback:foods.filter(f=>inferFoodRole(f)!=="Sauce / Condiment"));
     if(!pool.length) return foods[0];
-    const mixed=shuffle(pool,seedv+person.id).map(f=>({...f,_score:score(f,priority)}));
-    mixed.sort((a,b)=>b._score-a._score);
-    return mixed[0];
+
+    // Keep the choices sensible, but deliberately rotate among several good
+    // options so Try Another can produce a genuinely different meal/plan.
+    const ranked=pool.map(f=>({...f,_score:score(f,priority)})).sort((a,b)=>b._score-a._score);
+    const best=ranked[0]._score;
+    const tolerance=Math.max(4,Math.abs(best)*0.3);
+    let choices=ranked.filter((f,idx)=>idx<4 && f._score>=best-tolerance);
+    if(choices.length<2 && ranked.length>1) choices=ranked.slice(0,Math.min(3,ranked.length));
+    const pick=Math.floor(seededUnit(seedv,person.id*31+type.length)*choices.length);
+    return choices[pick] || ranked[0];
   }
   function buildPersonMeal(person,type,priority,seedv,stock=null){
     const limit=mealLimit(person,type), available=id=>stock?Number(stock[id]||0):Number(state.foods.find(f=>f.id===id)?.qty||0);
@@ -663,11 +674,19 @@
     addFood(anchor,anchorServings);
 
     const usedRoles=new Set(items.map(i=>inferFoodRole(i.food)));
-    const candidates=shuffle(eligible(person,type,stock).filter(f=>f.id!==anchor.id),seedv+17)
-      .map(f=>({f,pair:pairScore(anchor,f,type),base:score(f,priority),role:inferFoodRole(f)}))
+    const candidates=eligible(person,type,stock).filter(f=>f.id!==anchor.id)
+      .map(f=>({
+        f,
+        pair:pairScore(anchor,f,type),
+        base:score(f,priority),
+        role:inferFoodRole(f),
+        variety:seededUnit(seedv+17,f.id)*18
+      }))
       .filter(x=>x.role!=="Sauce / Condiment" || x.pair>20)
       .filter(x=>!(type!=="Breakfast" && x.role==="Side / Snack" && x.pair<=0))
-      .sort((a,b)=>(b.pair-a.pair)||(b.base-a.base));
+      // Pairing still dominates, while the small seeded variety bonus lets
+      // similarly-good sides/condiments trade places on another attempt.
+      .sort((a,b)=>((b.pair+b.variety)-(a.pair+a.variety))||((b.base+b.variety)-(a.base+a.variety)));
 
     for(const x of candidates){
       if(items.length>=3) break;
