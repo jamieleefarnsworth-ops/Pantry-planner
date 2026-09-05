@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.9</title>
+<title>Pantry Planner v6.0</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.9</h1>
+      <h1>Pantry Planner v6.0</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -147,7 +147,7 @@
             </div>
           </div>
         </div>
-        <p class="muted small">Select one or more people. Every included ingredient uses at least 1 full serving. Press again for a different valid meal.</p>
+        <p class="muted small">Select one or more people. Every included ingredient uses exactly 1 full serving per person. Press again for a different valid meal.</p>
       </div>
 
       <div id="customMealBuilder" class="hidden">
@@ -174,11 +174,16 @@
         <div class="row" style="margin-top:10px">
           <button id="useCustomMeal" class="btn primary" type="button">Use this meal</button>
           <button id="clearCustomMeal" class="btn" type="button">Clear meal</button>
+          <button id="cancelLoggedMealEdit" class="btn hidden" type="button">Cancel edit</button>
         </div>
       </div>
     </div>
     <div id="mealResult" class="panel" style="margin-top:12px">
       <h2>Generated meal</h2><p class="muted">Generate a meal to see a suggestion.</p>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="between"><div><h2>Today's Meals</h2><p class="muted small">Meals used today can be edited or deleted. Inventory and learned meal patterns are corrected automatically.</p></div><span id="todayMealCount" class="badge">0 meals</span></div>
+      <div id="todayMealLog" style="margin-top:12px"></div>
     </div>
   </section>
 
@@ -273,6 +278,7 @@
     ],
     shopping:[],
     learnedMeals:[],
+    loggedMeals:[],
     lastMealSignatures:[],
     generateCount:0
   };
@@ -302,6 +308,15 @@
       uses:Math.max(1,Number(m.uses)||1),
       lastUsedAt:Number(m.lastUsedAt)||Date.now()
     })).filter(m=>m.foodIds.length>=2) : [];
+    loaded.loggedMeals = Array.isArray(loaded.loggedMeals) ? loaded.loggedMeals.map(m=>({
+      id:m.id||Date.now()+Math.random(),
+      createdAt:Number(m.createdAt)||Date.now(),
+      updatedAt:Number(m.updatedAt)||Number(m.createdAt)||Date.now(),
+      mealType:["Breakfast","Lunch","Dinner"].includes(m.mealType)?m.mealType:"Dinner",
+      source:m.source||"custom",
+      learnedKeys:Array.isArray(m.learnedKeys)?m.learnedKeys:[],
+      items:Array.isArray(m.items)?m.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings)||0,people:Array.isArray(i.people)?i.people:[]})).filter(i=>Number.isFinite(i.foodId)&&i.servings>0&&i.people.length):[]
+    })).filter(m=>m.items.length) : [];
     loaded.lastMealSignatures = loaded.lastMealSignatures||[];
     loaded.generateCount = loaded.generateCount||0;
     return loaded;
@@ -822,7 +837,42 @@
   function addToShoppingIfNeeded(food){
     if(food.qty>0) return;
     const exists=state.shopping.some(i=>i.name.trim().toLowerCase()===food.name.trim().toLowerCase());
-    if(!exists) state.shopping.push({id:Date.now()+Math.random(),name:food.name});
+    if(!exists) state.shopping.push({id:Date.now()+Math.random(),name:food.name,auto:true,sourceFoodId:food.id});
+  }
+
+  function removeAutoShoppingIfRestored(food){
+    if(food.qty<=0) return;
+    state.shopping=state.shopping.filter(i=>!(i.auto===true && Number(i.sourceFoodId)===Number(food.id)));
+  }
+
+  function usageForItems(items){
+    const usage={};
+    (items||[]).forEach(i=>{
+      const mult=Array.isArray(i.people)?i.people.length:0;
+      usage[i.foodId]=(usage[i.foodId]||0)+(Number(i.servings)||0)*mult;
+    });
+    return usage;
+  }
+
+  function applyMealEditInventory(oldItems,newItems){
+    const oldUsage=usageForItems(oldItems), newUsage=usageForItems(newItems);
+    const ids=new Set([...Object.keys(oldUsage),...Object.keys(newUsage)]);
+    for(const id of ids){
+      const f=state.foods.find(x=>x.id===Number(id));
+      const oldAmt=Number(oldUsage[id]||0), newAmt=Number(newUsage[id]||0);
+      if(!f){ if(newAmt>oldAmt) return {ok:false,name:"An ingredient"}; continue; }
+      const virtuallyAvailable=Number(f.qty)+oldAmt;
+      if(newAmt>virtuallyAvailable+1e-9) return {ok:false,name:f.name};
+    }
+    for(const id of ids){
+      const f=state.foods.find(x=>x.id===Number(id)); if(!f) continue;
+      const delta=Number(newUsage[id]||0)-Number(oldUsage[id]||0);
+      f.qty=Math.max(0,Number((Number(f.qty)-delta).toFixed(2)));
+      if(f.qty<=0) addToShoppingIfNeeded(f); else removeAutoShoppingIfRestored(f);
+    }
+    resetGeneratedCombinationCycle();
+    resetPlanCombinationCycle();
+    return {ok:true};
   }
 
   function applyUsage(usage){
@@ -837,17 +887,103 @@
     resetPlanCombinationCycle();
   }
 
+  function mealLearningSignatures(items,type){
+    const signatures=new Map();
+    for(const person of householdNames()){
+      const ids=[...new Set((items||[]).filter(i=>(i.people||[]).includes(person)).map(i=>Number(i.foodId)))].sort((a,b)=>a-b);
+      if(ids.length>=2) signatures.set(ids.join(","),ids);
+    }
+    if(!signatures.size){
+      const ids=[...new Set((items||[]).map(i=>Number(i.foodId)))].sort((a,b)=>a-b);
+      if(ids.length>=2) signatures.set(ids.join(","),ids);
+    }
+    return [...signatures.values()].map(ids=>({key:`${type}|${ids.join(",")}`,ids}));
+  }
+
+  function addLearningContribution(items,type){
+    const now=Date.now(), keys=[];
+    for(const sig of mealLearningSignatures(items,type)){
+      const existing=(state.learnedMeals||[]).find(m=>m.mealType===type && (m.foodIds||[]).slice().sort((a,b)=>a-b).join(",")===sig.ids.join(","));
+      if(existing){existing.uses=(Number(existing.uses)||1)+1;existing.lastUsedAt=now;}
+      else state.learnedMeals.push({id:now+Math.random(),mealType:type,foodIds:sig.ids,uses:1,lastUsedAt:now});
+      keys.push(sig.key);
+    }
+    if(state.learnedMeals.length>100){state.learnedMeals.sort((a,b)=>(Number(b.lastUsedAt)||0)-(Number(a.lastUsedAt)||0));state.learnedMeals=state.learnedMeals.slice(0,100);}
+    resetGeneratedCombinationCycle(); resetPlanCombinationCycle();
+    return keys;
+  }
+
+  function removeLearningContribution(keys){
+    for(const key of (keys||[])){
+      const [type,idPart]=String(key).split("|");
+      const ids=(idPart||"").split(",").filter(Boolean).map(Number).sort((a,b)=>a-b);
+      const m=(state.learnedMeals||[]).find(x=>x.mealType===type && (x.foodIds||[]).slice().sort((a,b)=>a-b).join(",")===ids.join(","));
+      if(!m) continue;
+      m.uses=(Number(m.uses)||1)-1;
+      if(m.uses<=0) state.learnedMeals=state.learnedMeals.filter(x=>x!==m);
+    }
+    resetGeneratedCombinationCycle(); resetPlanCombinationCycle();
+  }
+
+  function logMeal(items,type,source,learn=false){
+    const copy=(items||[]).map(i=>({foodId:Number(i.foodId),servings:Number(i.servings),people:[...(i.people||[])]}));
+    const now=Date.now();
+    const entry={id:now+Math.random(),createdAt:now,updatedAt:now,mealType:type,source,items:copy,learnedKeys:learn?addLearningContribution(copy,type):[]};
+    state.loggedMeals.push(entry);
+    return entry;
+  }
+
+  function localDayKey(ts){
+    const d=new Date(ts), y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function renderTodayMealLog(){
+    const box=$("#todayMealLog"), badge=$("#todayMealCount"); if(!box||!badge) return;
+    const today=localDayKey(Date.now());
+    const meals=(state.loggedMeals||[]).filter(m=>localDayKey(m.createdAt)===today).sort((a,b)=>b.createdAt-a.createdAt);
+    badge.textContent=`${meals.length} meal${meals.length===1?"":"s"}`;
+    if(!meals.length){box.innerHTML='<p class="muted small">No meals logged today yet.</p>';return;}
+    box.innerHTML=meals.map(m=>{
+      const perPerson={};
+      for(const item of m.items){
+        const f=state.foods.find(x=>x.id===Number(item.foodId)); if(!f) continue;
+        for(const name of item.people||[]){
+          if(!perPerson[name]) perPerson[name]={cal:0,protein:0,carbs:0,fat:0,items:[]};
+          perPerson[name].cal+=Number(f.cal||0)*item.servings;
+          perPerson[name].protein+=Number(f.protein||0)*item.servings;
+          perPerson[name].carbs+=Number(f.carbs||0)*item.servings;
+          perPerson[name].fat+=Number(f.fat||0)*item.servings;
+          perPerson[name].items.push(`${item.servings}× ${esc(f.name)}`);
+        }
+      }
+      const rows=Object.entries(perPerson).map(([name,v])=>`<div class="meal-person"><strong>${esc(name)}</strong><div class="muted small" style="margin-top:4px">${v.items.join(", ")}</div><div class="small" style="margin-top:4px">${Math.round(v.cal)} cal · Protein ${Math.round(v.protein)}g · Carbs ${Math.round(v.carbs)}g · Fat ${Math.round(v.fat)}g</div></div>`).join("");
+      const t=new Date(m.createdAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+      return `<div class="card" style="margin-bottom:10px"><div class="between"><div><h3>${esc(m.mealType)} · ${esc(t)}</h3><div class="muted small">${m.source==="custom"?"Build My Own":"Logged meal"}</div></div><div class="row"><button class="btn" type="button" data-edit-log="${m.id}">Edit meal</button><button class="btn danger" type="button" data-delete-log="${m.id}">Delete meal</button></div></div>${rows||'<p class="muted small">Ingredients no longer exist in Inventory.</p>'}</div>`;
+    }).join("");
+    $$('[data-edit-log]').forEach(b=>b.onclick=()=>editLoggedMeal(Number(b.dataset.editLog)));
+    $$('[data-delete-log]').forEach(b=>b.onclick=()=>deleteLoggedMeal(Number(b.dataset.deleteLog)));
+  }
+
+  function generatedResultToLoggedItems(result){
+    const items=[];
+    result.forEach(r=>r.items.forEach(i=>items.push({foodId:i.food.id,servings:i.servings,people:[r.person.name]})));
+    return items;
+  }
+
   function renderMeal(result,type){
     if(!result.length){$("#mealResult").innerHTML='<h2>Generated meal</h2><p class="muted">Add household members first.</p>';return;}
     $("#mealResult").innerHTML=`
-      <div class="between"><div><h2>${esc(type)} suggestion</h2><p class="muted small">Each included item uses at least 1 full serving.</p></div><button id="useMeal" class="btn primary">Use this meal</button></div>
+      <div class="between"><div><h2>${esc(type)} suggestion</h2><p class="muted small">Each included item uses exactly 1 full serving per person.</p></div><button id="useMeal" class="btn primary">Use this meal</button></div>
       ${result.map(r=>`<div class="meal-person"><h3>${esc(r.person.name)}</h3><p class="muted small">Limit ${r.limit} cal</p>
       ${r.items.length?r.items.map(i=>`<div class="meal-line"><span>${i.servings} serving${i.servings===1?"":"s"} ${esc(i.food.name)}</span><span>${i.c} cal</span></div>`).join(""):'<p class="muted small">No full-serving combination fits.</p>'}
       <strong>${r.totalCal} cal · Protein ${Math.round(r.totalProtein)}g · Carbs ${Math.round(r.totalCarbs)}g · Fat ${Math.round(r.totalFat)}g</strong></div>`).join("")}`;
     $("#useMeal").onclick=()=>{
       const usage={}; result.forEach(r=>r.items.forEach(i=>usage[i.food.id]=(usage[i.food.id]||0)+i.servings));
+      logMeal(generatedResultToLoggedItems(result),type,"generated",false);
       applyUsage(usage);
-      $("#useMeal").disabled=true; $("#useMeal").textContent="Inventory & shopping list updated";
+      renderTodayMealLog();
+      $("#useMeal").disabled=true; $("#useMeal").textContent="Meal logged & inventory updated";
     };
   }
 
@@ -963,6 +1099,7 @@
 
   let customMeal=[];
   let customSelectedPeople=null;
+  let editingLoggedMealId=null;
 
   function householdNames(){ return state.people.map(p=>p.name); }
 
@@ -996,8 +1133,11 @@
     const foodSel=$("#customFood");
     if(!foodSel) return;
     const currentFood=foodSel.value;
-    const foods=state.foods.filter(f=>f.qty>0).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
-    foodSel.innerHTML=foods.length?foods.map(f=>`<option value="${f.id}">${esc(f.name)} (${f.qty} servings)</option>`).join(""):'<option value="">No inventory available</option>';
+    const original=editingLoggedMealId?(state.loggedMeals||[]).find(m=>m.id===editingLoggedMealId):null;
+    const originalUsage=usageForItems(original?.items||[]);
+    const availableFor=f=>Number(f.qty||0)+Number(originalUsage[f.id]||0);
+    const foods=state.foods.filter(f=>availableFor(f)>0).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
+    foodSel.innerHTML=foods.length?foods.map(f=>`<option value="${f.id}">${esc(f.name)} (${Number(availableFor(f).toFixed(2))} servings available)</option>`).join(""):'<option value="">No inventory available</option>';
     if([...foodSel.options].some(o=>o.value===currentFood)) foodSel.value=currentFood;
     renderCustomPeoplePicker();
   }
@@ -1052,31 +1192,46 @@
 
   function learnCurrentCustomMeal(){
     const type=$("#customMealType")?.value || $("#mealType")?.value || defaultMealTypeForCurrentTime();
-    const signatures=new Map();
-    for(const person of householdNames()){
-      const ids=[...new Set(customMeal.filter(i=>customPeopleForItem(i).includes(person)).map(i=>Number(i.foodId)))].sort((a,b)=>a-b);
-      if(ids.length<2) continue;
-      signatures.set(ids.join(","),ids);
-    }
-    if(!signatures.size){
-      const ids=[...new Set(customMeal.map(i=>Number(i.foodId)))].sort((a,b)=>a-b);
-      if(ids.length>=2) signatures.set(ids.join(","),ids);
-    }
-    const now=Date.now();
-    for(const ids of signatures.values()){
-      const existing=(state.learnedMeals||[]).find(m=>m.mealType===type && (m.foodIds||[]).slice().sort((a,b)=>a-b).join(",")===ids.join(","));
-      if(existing){ existing.uses=(Number(existing.uses)||1)+1; existing.lastUsedAt=now; }
-      else state.learnedMeals.push({id:now+Math.random(),mealType:type,foodIds:ids,uses:1,lastUsedAt:now});
-    }
-    if(state.learnedMeals.length>100){
-      state.learnedMeals.sort((a,b)=>(Number(b.lastUsedAt)||0)-(Number(a.lastUsedAt)||0));
-      state.learnedMeals=state.learnedMeals.slice(0,100);
-    }
-    resetGeneratedCombinationCycle();
-    resetPlanCombinationCycle();
+    return addLearningContribution(customMeal,type);
+  }
+
+
+  function exitLoggedMealEdit(clear=true){
+    editingLoggedMealId=null;
+    $("#useCustomMeal").textContent="Use this meal";
+    $("#clearCustomMeal").textContent="Clear meal";
+    $("#cancelLoggedMealEdit").classList.add("hidden");
+    if(clear) customMeal=[];
+    renderCustomMealOptions(); renderCustomMeal();
+  }
+
+  function editLoggedMeal(id){
+    const meal=(state.loggedMeals||[]).find(m=>m.id===id); if(!meal) return;
+    editingLoggedMealId=id;
+    customMeal=meal.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings),people:[...(i.people||[])]}));
+    customSelectedPeople=[...new Set(customMeal.flatMap(i=>i.people||[]))];
+    $("#customMealType").value=meal.mealType;
+    $("#generatedMealBuilder").classList.add("hidden"); $("#customMealBuilder").classList.remove("hidden"); $("#mealResult").classList.add("hidden");
+    $("#showCustomMeal").classList.add("active"); $("#showGeneratedMeal").classList.remove("active");
+    $("#useCustomMeal").textContent="Save changes";
+    $("#clearCustomMeal").textContent="Clear meal";
+    $("#cancelLoggedMealEdit").classList.remove("hidden");
+    renderCustomMealOptions(); renderCustomMeal();
+    $("#customMealBuilder").scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  function deleteLoggedMeal(id){
+    const meal=(state.loggedMeals||[]).find(m=>m.id===id); if(!meal) return;
+    if(!confirm(`Delete this ${meal.mealType.toLowerCase()} meal? Its ingredients will be returned to Inventory.`)) return;
+    const adj=applyMealEditInventory(meal.items,[]); if(!adj.ok){alert("Could not restore this meal's inventory.");return;}
+    removeLearningContribution(meal.learnedKeys||[]);
+    state.loggedMeals=state.loggedMeals.filter(m=>m.id!==id);
+    if(editingLoggedMealId===id) exitLoggedMealEdit();
+    save(); renderFoods(); renderShopping(); renderCustomMealOptions(); renderTodayMealLog();
   }
 
   $("#showGeneratedMeal").onclick=()=>{
+    if(editingLoggedMealId) exitLoggedMealEdit();
     $("#generatedMealBuilder").classList.remove("hidden"); $("#customMealBuilder").classList.add("hidden"); $("#mealResult").classList.remove("hidden");
     $("#showGeneratedMeal").classList.add("active"); $("#showCustomMeal").classList.remove("active");
   };
@@ -1095,7 +1250,9 @@
     if(!people.length){ alert("Select at least one person for this ingredient."); return; }
     const requested=servings*people.length;
     const already=customMeal.filter(i=>i.foodId===foodId).reduce((t,i)=>t+i.servings*customMultiplier(i),0);
-    if(requested+already>f.qty){ alert(`Only ${f.qty} serving${f.qty===1?'':'s'} of ${f.name} available.`); return; }
+    const original=editingLoggedMealId?(state.loggedMeals||[]).find(m=>m.id===editingLoggedMealId):null;
+    const originalAvailable=Number(f.qty)+Number(usageForItems(original?.items||[])[foodId]||0);
+    if(requested+already>originalAvailable+1e-9){ alert(`Only ${Number(originalAvailable.toFixed(2))} serving${originalAvailable===1?'':'s'} of ${f.name} available.`); return; }
     const restrictedOwner=(f.owner==="Both"?"Everyone":f.owner);
     if(restrictedOwner!=="Everyone"){
       const invalid=people.filter(name=>name!==restrictedOwner);
@@ -1105,17 +1262,30 @@
     $("#customServings").value=""; renderCustomMeal();
   };
   $("#clearCustomMeal").onclick=()=>{customMeal=[];renderCustomMeal();};
+  $("#cancelLoggedMealEdit").onclick=()=>exitLoggedMealEdit();
   $("#useCustomMeal").onclick=()=>{
-    const usage={}; customMeal.forEach(i=>usage[i.foodId]=(usage[i.foodId]||0)+(i.servings*customMultiplier(i)));
-    const insufficient=Object.entries(usage).find(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); return !f||f.qty<amt;});
+    if(!customMeal.length) return;
+    const type=$("#customMealType").value;
+    if(editingLoggedMealId){
+      const meal=(state.loggedMeals||[]).find(m=>m.id===editingLoggedMealId); if(!meal){exitLoggedMealEdit();return;}
+      const newItems=customMeal.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings),people:[...(i.people||[])]}));
+      const adj=applyMealEditInventory(meal.items,newItems);
+      if(!adj.ok){alert(`${adj.name} does not have enough servings available for this edit.`);renderCustomMealOptions();return;}
+      removeLearningContribution(meal.learnedKeys||[]);
+      meal.items=newItems; meal.mealType=type; meal.updatedAt=Date.now();
+      meal.learnedKeys=meal.source==="custom"?addLearningContribution(newItems,type):[];
+      save(); renderFoods(); renderShopping(); renderTodayMealLog();
+      exitLoggedMealEdit();
+      $("#customMealTotals").textContent="Meal changes saved. Inventory and learning were updated.";
+      return;
+    }
+    const usage=usageForItems(customMeal);
+    const insufficient=Object.entries(usage).find(([id,amt])=>{const f=state.foods.find(x=>x.id===Number(id)); return !f||Number(f.qty)<amt;});
     if(insufficient){ alert("Inventory changed and this meal no longer fits. Please adjust the meal."); renderCustomMealOptions(); return; }
-    // Remember the ingredient relationship before inventory quantities change.
-    // Serving amounts are normalized: the generator will use at most 1 serving
-    // of each learned item per person.
-    learnCurrentCustomMeal();
+    logMeal(customMeal,type,"custom",true);
     applyUsage(usage);
-    customMeal=[]; renderCustomMeal();
-    $("#customMealTotals").textContent="Meal used. Inventory updated; anything that reached zero was added to Shopping List.";
+    customMeal=[]; renderCustomMeal(); renderTodayMealLog();
+    $("#customMealTotals").textContent="Meal logged. Inventory updated; anything that reached zero was added to Shopping List.";
   };
 
   let planSelectedPeople=null;
@@ -1169,9 +1339,11 @@
         alert(`${f?f.name:"An ingredient"} no longer has enough servings in Inventory for this planned meal. Rebuild the 3-day plan to use the latest inventory.`);
         return;
       }
+      const planItems=entry.meal.items.map(i=>({foodId:i.food.id,servings:i.servings,people:[entry.meal.person.name]}));
+      logMeal(planItems,entry.meal.type||"Dinner","plan",false);
       applyUsage(usage);
       entry.used=true;
-      renderCurrentPlan();
+      renderCurrentPlan(); renderTodayMealLog();
     });
   }
 
@@ -1247,6 +1419,7 @@
           }
           if(!meal) meal=buildPersonMeal(person,type,"balanced",seed,stock);
           meal.items.forEach(item=>stock[item.food.id]=Math.max(0,stock[item.food.id]-item.servings));
+          meal.type=type;
           entries.push({id:`${variation}-${day}-${i}-${person.id}`,used:false,meal});
         }
         mealGroups.push({type,entries});
@@ -1397,17 +1570,18 @@
   }
 
   $("#resetInventory").onclick=()=>{
-    if(confirm("Reset inventory? This will permanently erase all inventory items, the shopping list, and learned meal combinations.")){
+    if(confirm("Reset inventory? This will permanently erase all inventory items, the shopping list, today's meal log, and learned meal combinations.")){
       state.foods=[];
       state.shopping=[];
       state.learnedMeals=[];
+      state.loggedMeals=[];
       state.lastMealSignatures=[];
       editingFoodId=null;
       customMeal=[];
       save();
       cancelEdit();
       renderFoods(); renderShopping(); renderCustomMealOptions(); renderCustomMeal();
-      alert("Inventory, shopping list, and learned meal combinations have been reset.");
+      alert("Inventory, shopping list, meal log, and learned meal combinations have been reset.");
     }
   };
 
@@ -1442,7 +1616,7 @@
     resetGeneratedCombinationCycle();
   }
 
-  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderGeneratedPeoplePicker();renderPlanPeoplePicker();if(currentPlan) renderCurrentPlan();}
+  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderGeneratedPeoplePicker();renderPlanPeoplePicker();renderTodayMealLog();if(currentPlan) renderCurrentPlan();}
   applyTimeBasedMealDefault();
   renderAll();
   initCloud();
