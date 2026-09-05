@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.5</title>
+<title>Pantry Planner v5.6</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.5</h1>
+      <h1>Pantry Planner v5.6</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -1287,7 +1287,24 @@
     }
   };
 
+  function defaultMealTypeForCurrentTime(){
+    const hour=new Date().getHours();
+    const minute=new Date().getMinutes();
+    const mins=hour*60+minute;
+    if(mins < 10*60+30) return "Breakfast";
+    if(mins < 16*60) return "Lunch";
+    return "Dinner";
+  }
+
+  function applyTimeBasedMealDefault(){
+    const select=$("#mealType");
+    if(!select) return;
+    select.value=defaultMealTypeForCurrentTime();
+    resetGeneratedCombinationCycle();
+  }
+
   function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderGeneratedPeoplePicker();renderPlanPeoplePicker();if(currentPlan) renderCurrentPlan();}
+  applyTimeBasedMealDefault();
   renderAll();
   initCloud();
 })();
