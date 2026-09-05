@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v6.0</title>
+<title>Pantry Planner v6.1</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="theme-color" content="#0b5f34" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +57,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v6.0</h1>
+      <h1>Pantry Planner v6.1</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -97,6 +103,22 @@
       </form>
       <div id="inventoryMsg" class="status muted small"></div>
     </div>
+
+    <div class="panel" style="margin-top:12px">
+      <div class="between">
+        <div>
+          <h2>Backup & Restore</h2>
+          <p class="muted small">Save a copy of your household, inventory, shopping list, logged meals, and learned meal patterns. Restoring a backup replaces the current shared Pantry Planner data.</p>
+        </div>
+        <div class="row">
+          <button id="backupData" class="btn primary" type="button">Backup data</button>
+          <button id="restoreData" class="btn" type="button">Restore data</button>
+          <input id="restoreFile" class="hidden" type="file" accept="application/json,.json">
+        </div>
+      </div>
+      <div id="backupMsg" class="status muted small"></div>
+    </div>
+
     <div id="inventoryList" class="cards"></div>
   </section>
 
@@ -359,6 +381,69 @@
 
   function hasSharedData(data){
     return !!(data && typeof data==="object" && (Array.isArray(data.foods) || Array.isArray(data.people) || Array.isArray(data.shopping)));
+  }
+
+  function backupPayload(){
+    return {
+      app:"Pantry Planner",
+      version:"6.1",
+      exportedAt:new Date().toISOString(),
+      state:JSON.parse(JSON.stringify(state))
+    };
+  }
+
+  function downloadBackup(){
+    const payload=backupPayload();
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const stamp=new Date().toISOString().slice(0,10);
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`Pantry-Planner-Backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const msg=document.querySelector("#backupMsg");
+    if(msg) msg.textContent=`Backup created ${new Date().toLocaleString()}. Keep the file somewhere safe.`;
+  }
+
+  async function restoreFromFile(file){
+    if(!file) return;
+    try{
+      const text=await file.text();
+      const parsed=JSON.parse(text);
+      const incoming=parsed && parsed.state ? parsed.state : parsed;
+      if(!hasSharedData(incoming)) throw new Error("This does not look like a Pantry Planner backup.");
+      if(!confirm("Restore this backup? This will replace the current shared Pantry Planner inventory, household, shopping list, meal log, and learned meals for both devices.")) return;
+
+      state=normalizeState(incoming);
+      cacheLocal();
+      renderAll();
+
+      if(cloudReady && db){
+        setSyncStatus("Restoring…");
+        clearTimeout(remoteSaveTimer);
+        const snapshot=JSON.parse(JSON.stringify(state));
+        const {error}=await db.from("pantry_planner").update({app_data:snapshot,updated_at:new Date().toISOString()}).eq("id",SHARED_ROW_ID);
+        if(error) throw error;
+        setSyncStatus("Synced", "ok");
+      }else{
+        save();
+      }
+
+      const msg=document.querySelector("#backupMsg");
+      if(msg) msg.textContent="Backup restored successfully. The restored data is now the shared Pantry Planner state.";
+      alert("Pantry Planner backup restored successfully.");
+    }catch(err){
+      console.error("Pantry Planner restore failed",err);
+      const msg=document.querySelector("#backupMsg");
+      if(msg) msg.textContent="Restore failed. Choose a Pantry Planner backup JSON file.";
+      alert("That backup could not be restored. Please choose a valid Pantry Planner backup file.");
+    }finally{
+      const input=document.querySelector("#restoreFile");
+      if(input) input.value="";
+    }
   }
 
   async function initCloud(){
@@ -1569,6 +1654,10 @@
     $$("[data-remove-shop]").forEach(b=>b.onclick=()=>{state.shopping=state.shopping.filter(i=>i.id!==Number(b.dataset.removeShop));save();if(activeShoppingId===Number(b.dataset.removeShop))hideShoppingPurchasePanels();renderShopping();});
   }
 
+  $("#backupData").onclick=downloadBackup;
+  $("#restoreData").onclick=()=>$("#restoreFile").click();
+  $("#restoreFile").onchange=e=>restoreFromFile(e.target.files?.[0]);
+
   $("#resetInventory").onclick=()=>{
     if(confirm("Reset inventory? This will permanently erase all inventory items, the shopping list, today's meal log, and learned meal combinations.")){
       state.foods=[];
@@ -1622,5 +1711,19 @@
   initCloud();
 })();
 </script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+      await reg.update();
+    } catch (err) {
+      console.warn('Pantry Planner update service unavailable:', err);
+    }
+  });
+}
+</script>
+
 </body>
 </html>
