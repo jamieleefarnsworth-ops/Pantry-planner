@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v5.7</title>
+<title>Pantry Planner v5.8</title>
 <style>
   :root{
     --bg:#111315; --panel:#1a1d21; --card:#20242a; --border:#353b44;
@@ -51,7 +51,7 @@
 <div class="wrap">
   <div class="between">
     <div>
-      <h1>Pantry Planner v5.7</h1>
+      <h1>Pantry Planner v5.8</h1>
       <p class="muted">Shared household version. Changes sync between connected devices.</p>
       <div id="syncStatus" class="badge">Connecting…</div>
     </div>
@@ -630,7 +630,7 @@
       else if(has(b,/bun|roll/)) v+=55;
       if(has(b,/cheese|ketchup|mustard|mayo|relish/)) v+=80;
       // Ground beef can also sensibly become a pasta meal.
-      if(isPasta(b)) v+=105;
+      if(isPasta(b)) v+=180;
     }
     if(isPasta(a)){
       if(isPastaSauce(b)) v+=180;
@@ -640,7 +640,7 @@
     // Make the pasta relationship work in either direction, so a meat anchor
     // can still discover pasta and sauce instead of requiring pasta to be the anchor.
     if(isPasta(b) && has(a,/ground beef|meatball|sausage|chicken/)) v+=90;
-    if(isPastaSauce(b) && (isPasta(a) || has(a,/ground beef|meatball|sausage/))) v+=115;
+    if(isPastaSauce(b) && isPasta(a)) v+=180;
     if(has(a,/chicken|steak|pork|turkey|fish|salmon/)){
       if(has(b,/rice|potato|vegetable|veggie|broccoli|carrot/)) v+=60;
     }
@@ -717,6 +717,12 @@
 
     for(const x of candidates){
       if(items.length>=3) break;
+      // Pasta sauce must never be added just because the anchor is ground beef.
+      // It is only valid after an actual pasta item is already in this meal.
+      const xn=(x.f.name||"").toLowerCase();
+      const xIsPastaSauce=/pasta\s*sauce|spaghetti\s*sauce|marinara|tomato\s*sauce|alfredo|vodka\s*sauce/.test(xn);
+      const mealHasPasta=items.some(i=>/spaghetti|pasta|macaroni|elbow|farfalle|penne|rigatoni|rotini|linguine|fettuccine|noodle/.test((i.food.name||"").toLowerCase()));
+      if(xIsPastaSauce && !mealHasPasta) continue;
       if(x.role==="Starch / Base" && usedRoles.has("Starch / Base")) continue;
       if(x.role==="Side / Snack" && usedRoles.has("Side / Snack")) continue;
       if(x.role==="Main / Protein" && usedRoles.has("Main / Protein") && x.pair<50) continue;
@@ -727,7 +733,15 @@
 
     // A condiment is only added when it has a known pairing with the main/base.
     if(items.length<3){
-      const cond=eligible(person,type,stock).filter(f=>!items.some(i=>i.food.id===f.id)&&inferFoodRole(f)==="Sauce / Condiment")
+      const cond=eligible(person,type,stock).filter(f=>{
+          if(items.some(i=>i.food.id===f.id)||inferFoodRole(f)!=="Sauce / Condiment") return false;
+          const n=(f.name||"").toLowerCase();
+          const pastaSauce=/pasta\s*sauce|spaghetti\s*sauce|marinara|tomato\s*sauce|alfredo|vodka\s*sauce/.test(n);
+          if(pastaSauce){
+            return items.some(i=>/spaghetti|pasta|macaroni|elbow|farfalle|penne|rigatoni|rotini|linguine|fettuccine|noodle/.test((i.food.name||"").toLowerCase()));
+          }
+          return true;
+        })
         .map(f=>({f,p:Math.max(...items.map(i=>pairScore(i.food,f,type)),0)})).sort((a,b)=>b.p-a.p)[0];
       if(cond && cond.p>=50) addFood(cond.f,1);
     }
