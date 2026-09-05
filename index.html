@@ -137,7 +137,17 @@
           <label>Priority<select id="mealPriority"><option value="balanced">Balanced</option><option value="protein">Highest protein</option><option value="use-soon">Use food soon</option><option value="stretch">Stretch inventory</option></select></label>
           <div style="align-self:end"><button id="generateMeal" class="btn primary" type="button">Generate meal</button></div>
         </div>
-        <p class="muted small">Every included ingredient uses at least 1 full serving. Press again for a different valid meal.</p>
+        <div style="margin-top:12px">
+          <label>Who are you making a meal for?</label>
+          <div class="people-picker">
+            <div id="generatedPeopleList" class="people-picker-list"></div>
+            <div class="picker-actions">
+              <button id="selectAllGeneratedPeople" class="btn" type="button">Select all</button>
+              <button id="clearGeneratedPeople" class="btn" type="button">Clear</button>
+            </div>
+          </div>
+        </div>
+        <p class="muted small">Select one or more people. Every included ingredient uses at least 1 full serving. Press again for a different valid meal.</p>
       </div>
 
       <div id="customMealBuilder" class="hidden">
@@ -402,7 +412,7 @@
     $$("[data-edit-person]").forEach(b=>b.onclick=()=>startPersonEdit(Number(b.dataset.editPerson)));
     $$("[data-remove-person]").forEach(b=>b.onclick=()=>{
       state.people=state.people.filter(p=>p.id!==Number(b.dataset.removePerson));
-      save(); renderPeople(); syncOwners(); renderCustomMealOptions(); renderPlanPeoplePicker();
+      save(); renderPeople(); syncOwners(); renderCustomMealOptions(); renderGeneratedPeoplePicker(); renderPlanPeoplePicker();
     });
     syncOwners();
   }
@@ -558,7 +568,7 @@
     $("#personForm").reset();
     $("#savePersonBtn").textContent="Add person";
     $("#cancelPersonEditBtn").classList.add("hidden");
-    renderPeople(); renderFoods(); renderCustomMealOptions(); renderCustomMeal();
+    renderPeople(); renderFoods(); renderCustomMealOptions(); renderCustomMeal(); renderGeneratedPeoplePicker();
   };
 
   function mealLimit(p,type){ return p[type.toLowerCase()] || 500; }
@@ -706,12 +716,12 @@
     return {person,limit,items,totalCal,totalProtein,totalCarbs,totalFat};
   }
   function signature(r){return r.map(x=>x.person.name+":"+x.items.map(i=>i.food.id+"x"+i.servings).join("-")).join("|");}
-  function generateDifferent(type,priority){
+  function generateDifferent(type,priority,people=state.people){
     let attempts=0,r=[],sig="";
     do{
       const seedv=state.generateCount+attempts+1;
       const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
-      r=state.people.map((p,idx)=>{
+      r=people.map((p,idx)=>{
         const meal=buildPersonMeal(p,type,priority,seedv+idx,stock);
         meal.items.forEach(i=>stock[i.food.id]=Math.max(0,stock[i.food.id]-i.servings));
         return meal;
@@ -754,9 +764,55 @@
     };
   }
 
+  let generatedSelectedPeople=null;
+
+  function ensureGeneratedPeopleSelection(){
+    const ids=state.people.map(p=>p.id);
+    if(generatedSelectedPeople===null) generatedSelectedPeople=[...ids];
+    else generatedSelectedPeople=generatedSelectedPeople.filter(id=>ids.includes(id));
+  }
+
+  function selectedGeneratedPeople(){
+    return $$("#generatedPeopleList input[type=checkbox]:checked").map(cb=>Number(cb.value));
+  }
+
+  function renderGeneratedPeoplePicker(){
+    const box=$("#generatedPeopleList"); if(!box) return;
+    ensureGeneratedPeopleSelection();
+    if(!state.people.length){
+      box.innerHTML='<span class="muted small">Add household members first.</span>';
+      $("#selectAllGeneratedPeople").disabled=true;
+      $("#clearGeneratedPeople").disabled=true;
+      return;
+    }
+    $("#selectAllGeneratedPeople").disabled=false;
+    $("#clearGeneratedPeople").disabled=false;
+    box.innerHTML=state.people.map(p=>`<label class="person-check"><input type="checkbox" value="${p.id}" ${generatedSelectedPeople.includes(p.id)?'checked':''}><span>${esc(p.name)}</span></label>`).join('');
+    $$("#generatedPeopleList input[type=checkbox]").forEach(cb=>cb.onchange=()=>{
+      generatedSelectedPeople=selectedGeneratedPeople();
+      state.lastMealSignatures=[];
+      $("#generateMeal").textContent="Generate meal";
+      save();
+    });
+  }
+
+  $("#selectAllGeneratedPeople").onclick=()=>{
+    generatedSelectedPeople=state.people.map(p=>p.id);
+    renderGeneratedPeoplePicker();
+    state.lastMealSignatures=[]; $("#generateMeal").textContent="Generate meal"; save();
+  };
+  $("#clearGeneratedPeople").onclick=()=>{
+    generatedSelectedPeople=[];
+    renderGeneratedPeoplePicker();
+    state.lastMealSignatures=[]; $("#generateMeal").textContent="Generate meal"; save();
+  };
+
   $("#generateMeal").onclick=()=>{
     const type=$("#mealType").value,priority=$("#mealPriority").value;
-    renderMeal(generateDifferent(type,priority),type); $("#generateMeal").textContent="Try another";
+    generatedSelectedPeople=selectedGeneratedPeople();
+    const people=state.people.filter(p=>generatedSelectedPeople.includes(p.id));
+    if(!people.length){ alert("Select at least one person to make a meal for."); return; }
+    renderMeal(generateDifferent(type,priority,people),type); $("#generateMeal").textContent="Try another";
   };
   $("#mealType").onchange=$("#mealPriority").onchange=()=>{state.lastMealSignatures=[];$("#generateMeal").textContent="Generate meal";save();};
 
@@ -1142,7 +1198,7 @@
     }
   };
 
-  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderPlanPeoplePicker();if(currentPlan) renderCurrentPlan();}
+  function renderAll(){renderPeople();renderFoods();renderShopping();renderCustomMealOptions();renderCustomMeal();renderGeneratedPeoplePicker();renderPlanPeoplePicker();if(currentPlan) renderCurrentPlan();}
   renderAll();
   initCloud();
 })();
