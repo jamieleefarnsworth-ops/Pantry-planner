@@ -1453,7 +1453,7 @@
   $("#selectAllCustomPeople").onclick=()=>{customSelectedPeople=householdNames();renderCustomPeoplePicker();};
   $("#clearCustomPeople").onclick=()=>{customSelectedPeople=[];renderCustomPeoplePicker();};
   $("#addCustomItem").onclick=()=>{
-    const foodId=Number($("#customFood").value), servings=num($("#customServings").value,0.25);
+    const foodId=Number($("#customFood").value), servings=num($("#customServings").value,1);
     const people=selectedCustomPeople();
     customSelectedPeople=[...people];
     const f=state.foods.find(x=>x.id===foodId); if(!f) return;
