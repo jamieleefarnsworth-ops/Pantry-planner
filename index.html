@@ -69,11 +69,12 @@
   .meal-type-option span{order:1}
   .nutrition-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}
   .nutrition-card{border:1px solid var(--border);background:var(--card);border-radius:14px;padding:16px}
-  .nutrition-bar{height:18px;border:1px solid var(--border);background:#14171b;border-radius:999px;overflow:hidden;margin:8px 0 6px}
-  .nutrition-bar-fill{height:100%;background:var(--accent);border-radius:999px;transition:width .2s ease}
+  .nutrition-bar{height:18px;border:1px solid var(--border);background:#14171b;border-radius:999px;overflow:hidden;margin:8px 0 6px;box-shadow:inset 0 1px 2px rgba(255,255,255,.05),inset 0 -2px 4px rgba(0,0,0,.35)}
+  .nutrition-bar-fill{height:100%;background:linear-gradient(to bottom,rgba(255,255,255,.38) 0%,rgba(255,255,255,.16) 38%,rgba(255,255,255,.02) 52%,rgba(0,0,0,.14) 100%),var(--accent);border-radius:999px;transition:width .2s ease;box-shadow:inset 0 1px 0 rgba(255,255,255,.45),inset 0 -2px 3px rgba(0,0,0,.18)}
   .nutrition-summary{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
   .macro-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:16px}
-  .macro-pie{width:150px;height:150px;border-radius:50%;border:1px solid var(--border);flex:0 0 150px}
+  .macro-pie{position:relative;width:150px;height:150px;border-radius:50%;border:1px solid var(--border);flex:0 0 150px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(255,255,255,.18),inset 0 -5px 9px rgba(0,0,0,.28),0 1px 2px rgba(0,0,0,.25)}
+  .macro-pie::after{content:"";position:absolute;inset:0;border-radius:50%;background:linear-gradient(to bottom,rgba(255,255,255,.34) 0%,rgba(255,255,255,.12) 38%,rgba(255,255,255,0) 56%,rgba(0,0,0,.10) 100%);pointer-events:none}
   .macro-legend{min-width:150px;flex:1}
   .macro-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
   .macro-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px}
@@ -1134,8 +1135,30 @@
       const pp=macroTotal?proteinCal/macroTotal*100:0;
       const cp=macroTotal?carbsCal/macroTotal*100:0;
       const fp=macroTotal?fatCal/macroTotal*100:0;
-      const pEnd=pp, cEnd=pp+cp;
-      const pie=macroTotal?`conic-gradient(#4f9f6e 0 ${pEnd.toFixed(2)}%, #5f8fc7 ${pEnd.toFixed(2)}% ${cEnd.toFixed(2)}%, #d9654f ${cEnd.toFixed(2)}% 100%)`:'conic-gradient(#353b44 0 100%)';
+      const activeSlices=[
+        {pct:pp,color:'#4f9f6e'},
+        {pct:cp,color:'#5f8fc7'},
+        {pct:fp,color:'#d9654f'}
+      ].filter(s=>s.pct>0.001);
+      let pie;
+      if(!macroTotal){
+        pie='conic-gradient(#353b44 0 100%)';
+      }else if(activeSlices.length===1){
+        pie=`conic-gradient(${activeSlices[0].color} 0 100%)`;
+      }else{
+        let cursor=0;
+        const stops=[];
+        activeSlices.forEach((slice,index)=>{
+          const start=cursor;
+          const end=index===activeSlices.length-1?100:Math.min(100,cursor+slice.pct);
+          const separator=Math.min(.7,Math.max(.18,(end-start)/3));
+          const colorEnd=Math.max(start,end-separator);
+          stops.push(`${slice.color} ${start.toFixed(2)}% ${colorEnd.toFixed(2)}%`);
+          stops.push(`#23272d ${colorEnd.toFixed(2)}% ${end.toFixed(2)}%`);
+          cursor=end;
+        });
+        pie=`conic-gradient(${stops.join(', ')})`;
+      }
       return `<div class="nutrition-card">
         <div class="nutrition-summary"><h3 style="margin-bottom:0">${esc(p.name)}</h3><strong>${cal} / ${Math.round(target)} cal</strong></div>
         <div class="nutrition-bar" role="progressbar" aria-label="${esc(p.name)} daily calories" aria-valuemin="0" aria-valuemax="${Math.round(target)}" aria-valuenow="${cal}"><div class="nutrition-bar-fill" style="width:${width.toFixed(1)}%"></div></div>
