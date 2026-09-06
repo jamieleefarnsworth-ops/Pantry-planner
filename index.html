@@ -1453,11 +1453,12 @@
   $("#selectAllCustomPeople").onclick=()=>{customSelectedPeople=householdNames();renderCustomPeoplePicker();};
   $("#clearCustomPeople").onclick=()=>{customSelectedPeople=[];renderCustomPeoplePicker();};
   $("#addCustomItem").onclick=()=>{
-    const foodId=Number($("#customFood").value), servings=num($("#customServings").value,1);
+    const foodId=Number($("#customFood").value);
     const people=selectedCustomPeople();
     customSelectedPeople=[...people];
     const f=state.foods.find(x=>x.id===foodId); if(!f) return;
     if(!people.length){ alert("Select at least one person for this ingredient."); return; }
+    const servings=num($("#customServings").value,1);
     const requested=servings*people.length;
     const already=customMeal.filter(i=>i.foodId===foodId).reduce((t,i)=>t+i.servings*customMultiplier(i),0);
     const original=editingLoggedMealId?(state.loggedMeals||[]).find(m=>m.id===editingLoggedMealId):null;
