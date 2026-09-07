@@ -249,7 +249,13 @@
       <h2>Generated meal</h2><p class="muted">Generate a meal to see a suggestion.</p>
     </div>
     <div class="panel" style="margin-top:12px">
-      <div class="between"><div><h2>Today's Meals</h2><p class="muted small">Meals used today can be edited or deleted. Inventory and learned meal patterns are corrected automatically.</p></div><span id="todayMealCount" class="badge">0 meals</span></div>
+      <div class="between"><div><h2 id="mealHistoryTitle">Today's Meals</h2><p class="muted small">Logged meals can be reviewed, edited, or deleted by date. Inventory and learned meal patterns are corrected automatically.</p></div><span id="todayMealCount" class="badge">0 meals</span></div>
+      <div class="row" style="margin-top:12px;align-items:end">
+        <button id="mealHistoryPrev" class="btn" type="button" aria-label="Previous day">‹ Previous</button>
+        <button id="mealHistoryToday" class="btn" type="button">Today</button>
+        <label style="flex:1;min-width:170px">Choose date<input id="mealHistoryDate" type="date"></label>
+        <button id="mealHistoryNext" class="btn" type="button" aria-label="Next day">Next ›</button>
+      </div>
       <div id="todayMealLog" style="margin-top:12px"></div>
     </div>
   </section>
@@ -548,11 +554,18 @@
   const $$ = s => [...document.querySelectorAll(s)];
   const esc = v => String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
   const num = (v,min=0,max=999999) => Math.max(min,Math.min(max,Number(v)||0));
+  let selectedMealHistoryDate=localDayKey(Date.now());
 
   $$(".tabs [data-tab]").forEach(btn=>btn.onclick=()=>{
+    const leavingMeal=!$("#meal").classList.contains("hidden") && btn.dataset.tab!=="meal";
+    if(leavingMeal) selectedMealHistoryDate=localDayKey(Date.now());
     $$(".tabs [data-tab]").forEach(b=>b.classList.toggle("active",b===btn));
     $$(".tab-panel").forEach(p=>p.classList.add("hidden"));
     $("#"+btn.dataset.tab).classList.remove("hidden");
+    if(btn.dataset.tab==="meal"){
+      selectedMealHistoryDate=localDayKey(Date.now());
+      renderTodayMealLog();
+    }
     if(btn.dataset.tab==="nutrition") renderNutrition();
   });
 
@@ -1068,13 +1081,39 @@
     return `${y}-${m}-${day}`;
   }
 
+  function mealHistoryDateLabel(dayKey){
+    const today=localDayKey(Date.now());
+    const yesterdayDate=new Date(); yesterdayDate.setDate(yesterdayDate.getDate()-1);
+    const yesterday=localDayKey(yesterdayDate.getTime());
+    if(dayKey===today) return "Today's Meals";
+    if(dayKey===yesterday) return "Yesterday's Meals";
+    const [y,m,d]=dayKey.split("-").map(Number);
+    return `Meals — ${new Date(y,m-1,d).toLocaleDateString([], {month:"long",day:"numeric",year:"numeric"})}`;
+  }
+
+  function shiftMealHistoryDay(amount){
+    const [y,m,d]=selectedMealHistoryDate.split("-").map(Number);
+    const dt=new Date(y,m-1,d); dt.setDate(dt.getDate()+amount);
+    const next=localDayKey(dt.getTime()), today=localDayKey(Date.now());
+    selectedMealHistoryDate=next>today?today:next;
+    renderTodayMealLog();
+  }
+
   function renderTodayMealLog(){
     renderNutrition();
     const box=$("#todayMealLog"), badge=$("#todayMealCount"); if(!box||!badge) return;
     const today=localDayKey(Date.now());
-    const meals=(state.loggedMeals||[]).filter(m=>localDayKey(m.createdAt)===today).sort((a,b)=>b.createdAt-a.createdAt);
+    if(!selectedMealHistoryDate || selectedMealHistoryDate>today) selectedMealHistoryDate=today;
+    const meals=(state.loggedMeals||[]).filter(m=>localDayKey(m.createdAt)===selectedMealHistoryDate).sort((a,b)=>b.createdAt-a.createdAt);
+    const title=$("#mealHistoryTitle"), dateInput=$("#mealHistoryDate"), nextBtn=$("#mealHistoryNext");
+    if(title) title.textContent=mealHistoryDateLabel(selectedMealHistoryDate);
+    if(dateInput){ dateInput.value=selectedMealHistoryDate; dateInput.max=today; }
+    if(nextBtn) nextBtn.disabled=selectedMealHistoryDate>=today;
     badge.textContent=`${meals.length} meal${meals.length===1?"":"s"}`;
-    if(!meals.length){box.innerHTML='<p class="muted small">No meals logged today yet.</p>';return;}
+    if(!meals.length){
+      box.innerHTML=`<p class="muted small">No meals logged ${selectedMealHistoryDate===today?"today yet":"for this date"}.</p>`;
+      return;
+    }
     box.innerHTML=meals.map(m=>{
       const perPerson={};
       for(const item of m.items){
@@ -1095,6 +1134,15 @@
     $$('[data-edit-log]').forEach(b=>b.onclick=()=>editLoggedMeal(Number(b.dataset.editLog)));
     $$('[data-delete-log]').forEach(b=>b.onclick=()=>deleteLoggedMeal(Number(b.dataset.deleteLog)));
   }
+
+  $("#mealHistoryPrev").onclick=()=>shiftMealHistoryDay(-1);
+  $("#mealHistoryNext").onclick=()=>shiftMealHistoryDay(1);
+  $("#mealHistoryToday").onclick=()=>{selectedMealHistoryDate=localDayKey(Date.now());renderTodayMealLog();};
+  $("#mealHistoryDate").onchange=e=>{
+    const today=localDayKey(Date.now());
+    selectedMealHistoryDate=(e.target.value && e.target.value<=today)?e.target.value:today;
+    renderTodayMealLog();
+  };
 
   function renderNutrition(){
     const box=$("#nutritionCards"), dateBadge=$("#nutritionDate");
