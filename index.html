@@ -56,6 +56,19 @@
   .meal-person{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
   .meal-line{display:flex;justify-content:space-between;gap:16px;padding:5px 0}
   .status{min-height:20px;margin-top:8px}
+  .custom-meal-final-action{
+    position:sticky;
+    bottom:8px;
+    z-index:20;
+    margin-top:12px;
+    padding:10px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:rgba(26,29,33,.96);
+    box-shadow:0 -6px 18px rgba(0,0,0,.28);
+    backdrop-filter:blur(6px);
+  }
+  .custom-meal-final-action .btn{width:100%}
   .small{font-size:13px}
   .people-picker{margin-top:5px;border:1px solid var(--border);border-radius:10px;background:#14171b;padding:10px 12px}
   .people-picker-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:8px}
@@ -224,9 +237,11 @@
         <div id="customMealItems" style="margin-top:12px"></div>
         <div id="customMealTotals" class="status muted small"></div>
         <div class="row" style="margin-top:10px">
-          <button id="useCustomMeal" class="btn primary" type="button">Use this meal</button>
           <button id="clearCustomMeal" class="btn" type="button">Clear meal</button>
           <button id="cancelLoggedMealEdit" class="btn hidden" type="button">Cancel edit</button>
+        </div>
+        <div id="customMealFinalAction" class="custom-meal-final-action hidden">
+          <button id="useCustomMeal" class="btn primary" type="button">Log Meal &amp; Use Inventory</button>
         </div>
       </div>
     </div>
@@ -769,9 +784,6 @@
     const isPasta=text=>has(text,/spaghetti|pasta|macaroni|elbow|farfalle|penne|rigatoni|rotini|linguine|fettuccine|noodle/);
     const isPastaSauce=text=>has(text,/pasta\s*sauce|spaghetti\s*sauce|marinara|tomato\s*sauce|alfredo|vodka\s*sauce/);
 
-    // Strong, specific pairings. A matching bun is heavily preferred and the
-    // wrong style of bun is penalized so franks do not get hamburger buns and
-    // ground beef does not get hot-dog buns when both names are clear.
     if(has(a,/hot dog|hotdog|frank|frankfurter/)){
       if(isHotDogBun(b)) v+=180;
       else if(isBurgerBun(b)) v-=120;
@@ -783,7 +795,6 @@
       else if(isHotDogBun(b)) v-=120;
       else if(has(b,/bun|roll/)) v+=55;
       if(has(b,/cheese|ketchup|mustard|mayo|relish/)) v+=80;
-      // Ground beef can also sensibly become a pasta meal.
       if(isPasta(b)) v+=180;
     }
     if(isPasta(a)){
@@ -791,8 +802,6 @@
       if(has(b,/parmesan|cheese/)) v+=85;
       if(has(b,/ground beef|meatball|sausage|chicken/)) v+=90;
     }
-    // Make the pasta relationship work in either direction, so a meat anchor
-    // can still discover pasta and sauce instead of requiring pasta to be the anchor.
     if(isPasta(b) && has(a,/ground beef|meatball|sausage|chicken/)) v+=90;
     if(isPastaSauce(b) && isPasta(a)) v+=180;
     if(has(a,/chicken|steak|pork|turkey|fish|salmon/)){
@@ -870,10 +879,6 @@
     const pool=preferred.length?preferred:(breakfastFallback.length?breakfastFallback:foods.filter(f=>inferFoodRole(f)!=="Sauce / Condiment"));
     if(!pool.length) return foods[0];
 
-    // Rank the sensible anchors by the selected priority, but do NOT discard
-    // lower-ranked valid foods. Try Another must eventually give every
-    // eligible anchor (for example ground beef) a chance before saying the
-    // combinations are exhausted.
     const ranked=pool.map(f=>({...f,_score:score(f,priority)})).sort((a,b)=>b._score-a._score);
     const n=Math.max(1,ranked.length);
     const step=Math.max(0,Math.floor(Number(seedv)||1)-1);
@@ -887,7 +892,6 @@
     if(!anchor) return {person,limit,items,totalCal,totalProtein,totalCarbs,totalFat};
 
     const addFood=(f,servings=1)=>{
-      // Generated meals use at most one serving of any inventory item per person per meal.
       if(items.some(i=>i.food.id===f.id)) return false;
       const max=Math.min(1,Math.floor(available(f.id)),Math.floor((limit-totalCal)/Math.max(1,Number(f.cal)||1)));
       servings=Math.min(servings,max);
@@ -909,14 +913,10 @@
       }))
       .filter(x=>x.role!=="Sauce / Condiment" || x.pair>20)
       .filter(x=>!(type!=="Breakfast" && x.role==="Side / Snack" && x.pair<=0))
-      // Pairing still dominates, while the small seeded variety bonus lets
-      // similarly-good sides/condiments trade places on another attempt.
       .sort((a,b)=>((b.pair+b.variety)-(a.pair+a.variety))||((b.base+b.variety)-(a.base+a.variety)));
 
     for(const x of candidates){
       if(items.length>=3) break;
-      // Pasta sauce must never be added just because the anchor is ground beef.
-      // It is only valid after an actual pasta item is already in this meal.
       const xn=(x.f.name||"").toLowerCase();
       const xIsPastaSauce=/pasta\s*sauce|spaghetti\s*sauce|marinara|tomato\s*sauce|alfredo|vodka\s*sauce/.test(xn);
       const mealHasPasta=items.some(i=>/spaghetti|pasta|macaroni|elbow|farfalle|penne|rigatoni|rotini|linguine|fettuccine|noodle/.test((i.food.name||"").toLowerCase()));
@@ -929,7 +929,6 @@
       if(addFood(x.f,1)) usedRoles.add(x.role);
     }
 
-    // A condiment is only added when it has a known pairing with the main/base.
     if(items.length<3){
       const cond=eligible(person,type,stock).filter(f=>{
           if(items.some(i=>i.food.id===f.id)||inferFoodRole(f)!=="Sauce / Condiment") return false;
@@ -1209,16 +1208,11 @@
 
   function buildGeneratedCombinationOptions(type,priority,people){
     const seen=new Set(), options=[];
-    // Meals learned from Build My Own are offered first, while still obeying
-    // inventory, ownership, meal-type, calorie, and 1-serving-per-item rules.
     for(const learned of learnedGroupOptions(type,people)){
       const sig=signature(learned);
       if(!seen.has(sig)){ seen.add(sig); options.push(learned); }
     }
     let stale=0;
-    // Search a wide deterministic seed range and keep every unique meal the
-    // current generator can produce. Once a long stretch produces nothing
-    // new, the reachable combination set is considered exhausted.
     for(let seedv=1;seedv<=5000 && stale<750;seedv++){
       const stock=Object.fromEntries(state.foods.map(f=>[f.id,Number(f.qty)||0]));
       const r=people.map((p,idx)=>{
@@ -1366,6 +1360,7 @@
       box.innerHTML='<p class="muted small">No ingredients added yet.</p>';
       totals.textContent='0 calories · Protein 0g · Carbs 0g · Fat 0g';
       $("#useCustomMeal").disabled=true;
+      $("#customMealFinalAction").classList.add("hidden");
       return;
     }
     box.innerHTML=customMeal.map((i,idx)=>{
@@ -1398,6 +1393,7 @@
     ).join('');
     totals.innerHTML=`<div><strong>Meal total:</strong> ${Math.round(cal)} calories · Protein ${Math.round(protein)}g · Carbs ${Math.round(carbs)}g · Fat ${Math.round(fat)}g</div>${personRows?`<div style="margin-top:10px"><div class="muted small">Per person</div>${personRows}</div>`:''}`;
     $("#useCustomMeal").disabled=false;
+    $("#customMealFinalAction").classList.remove("hidden");
   }
 
   function learnCurrentCustomMeal(){
@@ -1408,7 +1404,7 @@
 
   function exitLoggedMealEdit(clear=true){
     editingLoggedMealId=null;
-    $("#useCustomMeal").textContent="Use this meal";
+    $("#useCustomMeal").textContent="Log Meal & Use Inventory";
     $("#clearCustomMeal").textContent="Clear meal";
     $("#cancelLoggedMealEdit").classList.add("hidden");
     if(clear) customMeal=[];
@@ -1615,9 +1611,6 @@
           const person=people[j];
           const seed=variation*1000+day*100+i*10+j;
           let meal=null;
-          // The earliest plan variations prefer meals learned from Build My Own.
-          // Later retries fall back to the normal generator so learned meals do
-          // not crowd out every other valid possibility.
           const learned=learnedPatternsFor(type);
           if(learned.length && variation<=learned.length){
             for(let k=0;k<learned.length;k++){
