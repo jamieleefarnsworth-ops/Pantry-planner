@@ -42,6 +42,8 @@
   .btn.primary{background:#0A5F35;border-color:#0A5F35;color:#fff;font-weight:700}
   .btn.danger{border-color:var(--danger);color:#ffb2b2}
   .btn.active{background:#1d3327;border-color:var(--accent)}
+  .meal-section-divider{height:0;border-top:2px solid var(--border);margin:24px 4px 16px;box-shadow:0 1px 0 rgba(57,226,125,.08)}
+  #mealHistoryDate.history-active{background:#1d3327;border-color:var(--accent);box-shadow:0 0 0 1px rgba(57,226,125,.08)}
   .panel,.card{border:1px solid var(--border);background:var(--panel);border-radius:14px;padding:16px}
   .card{background:var(--card)}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
@@ -248,11 +250,13 @@
     <div id="mealResult" class="panel" style="margin-top:12px">
       <h2>Generated meal</h2><p class="muted">Generate a meal to see a suggestion.</p>
     </div>
-    <div class="panel" style="margin-top:12px">
+    <div class="meal-section-divider" aria-hidden="true"></div>
+    <div class="panel">
       <div class="between"><div><h2 id="mealHistoryTitle">Today's Meals</h2><p class="muted small">Logged meals can be reviewed, edited, or deleted by date. Inventory and learned meal patterns are corrected automatically.</p></div><span id="todayMealCount" class="badge">0 meals</span></div>
       <div class="row" style="margin-top:12px;align-items:end">
         <button id="mealHistoryPrev" class="btn" type="button" aria-label="Previous day">‹ Previous</button>
         <button id="mealHistoryToday" class="btn" type="button">Today</button>
+        <button id="mealHistoryYesterday" class="btn" type="button">Yesterday</button>
         <label style="flex:1;min-width:170px">Choose date<input id="mealHistoryDate" type="date"></label>
         <button id="mealHistoryNext" class="btn" type="button" aria-label="Next day">Next ›</button>
       </div>
@@ -1106,8 +1110,17 @@
     if(!selectedMealHistoryDate || selectedMealHistoryDate>today) selectedMealHistoryDate=today;
     const meals=(state.loggedMeals||[]).filter(m=>localDayKey(m.createdAt)===selectedMealHistoryDate).sort((a,b)=>b.createdAt-a.createdAt);
     const title=$("#mealHistoryTitle"), dateInput=$("#mealHistoryDate"), nextBtn=$("#mealHistoryNext");
+    const todayBtn=$("#mealHistoryToday"), yesterdayBtn=$("#mealHistoryYesterday");
+    const yesterdayDate=new Date(); yesterdayDate.setDate(yesterdayDate.getDate()-1);
+    const yesterday=localDayKey(yesterdayDate.getTime());
     if(title) title.textContent=mealHistoryDateLabel(selectedMealHistoryDate);
-    if(dateInput){ dateInput.value=selectedMealHistoryDate; dateInput.max=today; }
+    if(dateInput){
+      dateInput.value=selectedMealHistoryDate;
+      dateInput.max=today;
+      dateInput.classList.toggle("history-active",selectedMealHistoryDate!==today && selectedMealHistoryDate!==yesterday);
+    }
+    if(todayBtn) todayBtn.classList.toggle("active",selectedMealHistoryDate===today);
+    if(yesterdayBtn) yesterdayBtn.classList.toggle("active",selectedMealHistoryDate===yesterday);
     if(nextBtn) nextBtn.disabled=selectedMealHistoryDate>=today;
     badge.textContent=`${meals.length} meal${meals.length===1?"":"s"}`;
     if(!meals.length){
@@ -1138,6 +1151,7 @@
   $("#mealHistoryPrev").onclick=()=>shiftMealHistoryDay(-1);
   $("#mealHistoryNext").onclick=()=>shiftMealHistoryDay(1);
   $("#mealHistoryToday").onclick=()=>{selectedMealHistoryDate=localDayKey(Date.now());renderTodayMealLog();};
+  $("#mealHistoryYesterday").onclick=()=>{const d=new Date();d.setDate(d.getDate()-1);selectedMealHistoryDate=localDayKey(d.getTime());renderTodayMealLog();};
   $("#mealHistoryDate").onchange=e=>{
     const today=localDayKey(Date.now());
     selectedMealHistoryDate=(e.target.value && e.target.value<=today)?e.target.value:today;
