@@ -43,7 +43,7 @@
   .btn.danger{border-color:var(--danger);color:#ffb2b2}
   .btn.active{background:#1d3327;border-color:var(--accent)}
   .meal-section-divider{height:0;border-top:2px solid var(--accent);margin:24px 4px 16px;box-shadow:0 0 6px rgba(57,226,125,.28)}
-  #mealHistoryDate.history-active{background:#1d3327;border-color:var(--accent);box-shadow:0 0 0 1px rgba(57,226,125,.08)}
+  #mealHistoryDate.history-active,#nutritionHistoryDate.history-active{background:#1d3327;border-color:var(--accent);box-shadow:0 0 0 1px rgba(57,226,125,.08)}
   .panel,.card{border:1px solid var(--border);background:var(--panel);border-radius:14px;padding:16px}
   .card{background:var(--card)}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
@@ -288,8 +288,15 @@
   <section id="nutrition" class="tab-panel hidden">
     <div class="panel">
       <div class="between">
-        <div><h2>Today's Nutrition</h2><p class="muted">Daily calories and macro breakdown from everything logged in Today's Meals, including Snack/Drink entries.</p></div>
+        <div><h2 id="nutritionTitle">Today's Nutrition</h2><p class="muted">Daily calories and macro breakdown from everything logged for the selected date, including Snack/Drink entries.</p></div>
         <span id="nutritionDate" class="badge"></span>
+      </div>
+      <div class="row" style="margin-top:12px;align-items:end">
+        <button id="nutritionPrev" class="btn" type="button" aria-label="Previous day">‹ Previous</button>
+        <button id="nutritionToday" class="btn" type="button">Today</button>
+        <button id="nutritionYesterday" class="btn" type="button">Yesterday</button>
+        <label style="flex:1;min-width:170px">Choose date<input id="nutritionHistoryDate" type="date"></label>
+        <button id="nutritionNext" class="btn" type="button" aria-label="Next day">Next ›</button>
       </div>
       <p class="muted small" style="margin-top:10px">Macro charts show calorie contribution using Protein × 4, Carbs × 4, and Fat × 9.</p>
     </div>
@@ -560,6 +567,7 @@
   const esc = v => String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
   const num = (v,min=0,max=999999) => Math.max(min,Math.min(max,Number(v)||0));
   let selectedMealHistoryDate=localDayKey(Date.now());
+  let selectedNutritionDate=localDayKey(Date.now());
 
   $$(".tabs [data-tab]").forEach(btn=>btn.onclick=()=>{
     const leavingMeal=!$("#meal").classList.contains("hidden") && btn.dataset.tab!=="meal";
@@ -571,7 +579,10 @@
       selectedMealHistoryDate=localDayKey(Date.now());
       renderTodayMealLog();
     }
-    if(btn.dataset.tab==="nutrition") renderNutrition();
+    if(btn.dataset.tab==="nutrition"){
+      selectedNutritionDate=localDayKey(Date.now());
+      renderNutrition();
+    }
   });
 
   function syncOwners(){
@@ -1159,13 +1170,56 @@
     renderTodayMealLog();
   };
 
+  $("#nutritionPrev").onclick=()=>shiftNutritionDay(-1);
+  $("#nutritionNext").onclick=()=>shiftNutritionDay(1);
+  $("#nutritionToday").onclick=()=>{selectedNutritionDate=localDayKey(Date.now());renderNutrition();};
+  $("#nutritionYesterday").onclick=()=>{const d=new Date();d.setDate(d.getDate()-1);selectedNutritionDate=localDayKey(d.getTime());renderNutrition();};
+  $("#nutritionHistoryDate").onchange=e=>{
+    const today=localDayKey(Date.now());
+    selectedNutritionDate=(e.target.value && e.target.value<=today)?e.target.value:today;
+    renderNutrition();
+  };
+
+  function nutritionDateLabel(dayKey){
+    const today=localDayKey(Date.now());
+    const yesterdayDate=new Date(); yesterdayDate.setDate(yesterdayDate.getDate()-1);
+    const yesterday=localDayKey(yesterdayDate.getTime());
+    if(dayKey===today) return "Today's Nutrition";
+    if(dayKey===yesterday) return "Yesterday's Nutrition";
+    const [y,m,d]=dayKey.split("-").map(Number);
+    return `Nutrition — ${new Date(y,m-1,d).toLocaleDateString([], {month:"long",day:"numeric",year:"numeric"})}`;
+  }
+
+  function shiftNutritionDay(amount){
+    const [y,m,d]=selectedNutritionDate.split("-").map(Number);
+    const dt=new Date(y,m-1,d); dt.setDate(dt.getDate()+amount);
+    const next=localDayKey(dt.getTime()), today=localDayKey(Date.now());
+    selectedNutritionDate=next>today?today:next;
+    renderNutrition();
+  }
+
   function renderNutrition(){
     const box=$("#nutritionCards"), dateBadge=$("#nutritionDate");
     if(!box) return;
     const now=new Date();
-    if(dateBadge) dateBadge.textContent=now.toLocaleDateString([], {month:"short",day:"numeric",year:"numeric"});
     const today=localDayKey(now.getTime());
-    const meals=(state.loggedMeals||[]).filter(m=>localDayKey(m.createdAt)===today);
+    if(!selectedNutritionDate || selectedNutritionDate>today) selectedNutritionDate=today;
+    const yesterdayDate=new Date(); yesterdayDate.setDate(yesterdayDate.getDate()-1);
+    const yesterday=localDayKey(yesterdayDate.getTime());
+    const title=$("#nutritionTitle"), dateInput=$("#nutritionHistoryDate"), nextBtn=$("#nutritionNext");
+    const todayBtn=$("#nutritionToday"), yesterdayBtn=$("#nutritionYesterday");
+    const [sy,sm,sd]=selectedNutritionDate.split("-").map(Number);
+    if(dateBadge) dateBadge.textContent=new Date(sy,sm-1,sd).toLocaleDateString([], {month:"short",day:"numeric",year:"numeric"});
+    if(title) title.textContent=nutritionDateLabel(selectedNutritionDate);
+    if(dateInput){
+      dateInput.value=selectedNutritionDate;
+      dateInput.max=today;
+      dateInput.classList.toggle("history-active",selectedNutritionDate!==today && selectedNutritionDate!==yesterday);
+    }
+    if(todayBtn) todayBtn.classList.toggle("active",selectedNutritionDate===today);
+    if(yesterdayBtn) yesterdayBtn.classList.toggle("active",selectedNutritionDate===yesterday);
+    if(nextBtn) nextBtn.disabled=selectedNutritionDate>=today;
+    const meals=(state.loggedMeals||[]).filter(m=>localDayKey(m.createdAt)===selectedNutritionDate);
     if(!state.people.length){
       box.innerHTML='<div class="panel"><p class="muted">Add household members to see daily nutrition.</p></div>';
       return;
