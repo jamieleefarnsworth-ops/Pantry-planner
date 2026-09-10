@@ -222,6 +222,7 @@
         <p class="muted small">Pick an ingredient, servings, and who is eating it. Breakfast, Lunch, and Dinner combinations are learned and preferred in future generated meals. Snack/Drink entries still track inventory and nutrition, but are never learned. Learned meals are normalized to 1 serving of each item per person.</p>
         <div class="grid">
           <label>Meal<select id="customMealType"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack/Drink</option></select></label>
+          <label id="customMealDateWrap" class="hidden">Meal date<input id="customMealDate" type="date"></label>
           <label>Ingredient<select id="customFood"></select></label>
           <label>Servings<input id="customServings" type="number" min="0.25" step="0.25" placeholder="1"></label>
           <div>
@@ -1469,6 +1470,8 @@
     $("#useCustomMeal").textContent="Log Meal & Use Inventory";
     $("#clearCustomMeal").textContent="Clear meal";
     $("#cancelLoggedMealEdit").classList.add("hidden");
+    $("#customMealDateWrap")?.classList.add("hidden");
+    if($("#customMealDate")) $("#customMealDate").value="";
     if(clear) customMeal=[];
     renderCustomMealOptions(); renderCustomMeal();
   }
@@ -1479,6 +1482,12 @@
     customMeal=meal.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings),people:[...(i.people||[])]}));
     customSelectedPeople=[...new Set(customMeal.flatMap(i=>i.people||[]))];
     $("#customMealType").value=meal.mealType;
+    const mealDate=$("#customMealDate");
+    if(mealDate){
+      mealDate.value=localDayKey(meal.createdAt);
+      mealDate.max=localDayKey(Date.now());
+    }
+    $("#customMealDateWrap")?.classList.remove("hidden");
     $("#generatedMealBuilder").classList.add("hidden"); $("#customMealBuilder").classList.remove("hidden"); $("#mealResult").classList.add("hidden");
     $("#showCustomMeal").classList.add("active"); $("#showGeneratedMeal").classList.remove("active");
     $("#useCustomMeal").textContent="Save changes";
@@ -1540,9 +1549,17 @@
       const newItems=customMeal.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings),people:[...(i.people||[])]}));
       const adj=applyMealEditInventory(meal.items,newItems);
       if(!adj.ok){alert(`${adj.name} does not have enough servings available for this edit.`);renderCustomMealOptions();return;}
+      const chosenDay=$("#customMealDate")?.value || localDayKey(meal.createdAt);
+      const today=localDayKey(Date.now());
+      if(chosenDay>today){alert("Meal date cannot be in the future.");return;}
+      const originalTime=new Date(meal.createdAt);
+      const [yy,mm,dd]=chosenDay.split("-").map(Number);
+      const movedDate=new Date(yy,mm-1,dd,originalTime.getHours(),originalTime.getMinutes(),originalTime.getSeconds(),originalTime.getMilliseconds());
+      if(Number.isNaN(movedDate.getTime())){alert("Choose a valid meal date.");return;}
       removeLearningContribution(meal.learnedKeys||[]);
-      meal.items=newItems; meal.mealType=type; meal.updatedAt=Date.now();
+      meal.items=newItems; meal.mealType=type; meal.createdAt=movedDate.getTime(); meal.updatedAt=Date.now();
       meal.learnedKeys=meal.source==="custom" && type!=="Snack/Drink" ? addLearningContribution(newItems,type) : [];
+      selectedMealHistoryDate=chosenDay;
       save(); renderFoods(); renderShopping(); renderTodayMealLog();
       exitLoggedMealEdit();
       $("#customMealTotals").textContent="Meal changes saved. Inventory and learning were updated.";
