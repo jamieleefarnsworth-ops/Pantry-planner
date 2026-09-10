@@ -104,7 +104,7 @@
 <div class="wrap">
   <div class="app-header">
     <img class="app-icon" src="icon-192.png" alt="Pantry Planner icon">
-    <h1>Pantry Planner v6.3</h1>
+    <h1>Pantry Planner v6.4</h1>
     <p class="muted">Shared household version. Changes sync between connected devices.</p>
     <div id="syncStatus" class="badge">Connecting…</div>
   </div>
@@ -363,6 +363,7 @@
   const SUPABASE_URL = "https://melincekmtfytfwdgdqa.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9cxk75LRH8rYcMOBrp5IgA_3vfJWl0a";
   const SHARED_ROW_ID = 1;
+  const DATA_INTEGRITY_SYNC_VERSION = 1; // v6.4: conflict-resistant meal log sync
   const seed = {
     people:[
       {id:1,name:"Jamie",breakfast:500,lunch:500,dinner:500,snack:200,daily:1800,protein:100},
@@ -376,6 +377,7 @@
     shopping:[],
     learnedMeals:[],
     loggedMeals:[],
+    mealTombstones:{},
     lastMealSignatures:[],
     generateCount:0
   };
@@ -414,6 +416,9 @@
       learnedKeys:Array.isArray(m.learnedKeys)?m.learnedKeys:[],
       items:Array.isArray(m.items)?m.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings)||0,people:Array.isArray(i.people)?i.people:[]})).filter(i=>Number.isFinite(i.foodId)&&i.servings>0&&i.people.length):[]
     })).filter(m=>m.items.length) : [];
+    loaded.mealTombstones = loaded.mealTombstones && typeof loaded.mealTombstones==="object" && !Array.isArray(loaded.mealTombstones)
+      ? Object.fromEntries(Object.entries(loaded.mealTombstones).map(([id,ts])=>[String(id),Number(ts)||0]).filter(([,ts])=>ts>0))
+      : {};
     loaded.lastMealSignatures = loaded.lastMealSignatures||[];
     loaded.generateCount = loaded.generateCount||0;
     return loaded;
@@ -437,19 +442,94 @@
     el.style.borderColor = mode==="error" ? "var(--danger)" : mode==="ok" ? "var(--accent)" : "var(--border)";
   }
 
+  function cloneState(value){
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function mealVersion(meal){
+    return Math.max(Number(meal?.updatedAt)||0,Number(meal?.createdAt)||0);
+  }
+
+  function mergeMealIntegrity(primary,secondary){
+    const merged=normalizeState(cloneState(primary||{}));
+    const other=normalizeState(cloneState(secondary||{}));
+    const tombstones={...(merged.mealTombstones||{})};
+
+    for(const [id,ts] of Object.entries(other.mealTombstones||{})){
+      const key=String(id), stamp=Number(ts)||0;
+      if(stamp>Number(tombstones[key]||0)) tombstones[key]=stamp;
+    }
+
+    const byId=new Map();
+    for(const meal of [...(merged.loggedMeals||[]),...(other.loggedMeals||[])]){
+      const key=String(meal.id);
+      const existing=byId.get(key);
+      if(!existing || mealVersion(meal)>mealVersion(existing)) byId.set(key,cloneState(meal));
+    }
+
+    merged.mealTombstones=tombstones;
+    merged.loggedMeals=[...byId.values()]
+      .filter(meal=>Number(tombstones[String(meal.id)]||0)<mealVersion(meal))
+      .sort((a,b)=>(Number(a.createdAt)||0)-(Number(b.createdAt)||0));
+    return merged;
+  }
+
+  function markMealDeleted(id,deletedAt=Date.now()){
+    if(!state.mealTombstones || typeof state.mealTombstones!=="object") state.mealTombstones={};
+    const key=String(id);
+    state.mealTombstones[key]=Math.max(Number(state.mealTombstones[key]||0),Number(deletedAt)||Date.now());
+  }
+
+  function mealIntegrityFingerprint(value){
+    const normalized=normalizeState(cloneState(value||{}));
+    const meals=(normalized.loggedMeals||[]).map(m=>[String(m.id),mealVersion(m)]).sort((a,b)=>a[0].localeCompare(b[0]));
+    const tombstones=Object.entries(normalized.mealTombstones||{}).map(([id,ts])=>[String(id),Number(ts)||0]).sort((a,b)=>a[0].localeCompare(b[0]));
+    return JSON.stringify({meals,tombstones});
+  }
+
+  async function writeCloudSafely(localSnapshot){
+    let working=normalizeState(cloneState(localSnapshot));
+    for(let attempt=0;attempt<5;attempt++){
+      const {data:remoteRow,error:readError}=await db.from("pantry_planner").select("app_data,updated_at").eq("id",SHARED_ROW_ID).single();
+      if(readError) throw readError;
+
+      if(hasSharedData(remoteRow?.app_data)) working=mergeMealIntegrity(working,remoteRow.app_data);
+
+      const nextStamp=new Date().toISOString();
+      let query=db.from("pantry_planner")
+        .update({app_data:cloneState(working),updated_at:nextStamp})
+        .eq("id",SHARED_ROW_ID);
+
+      if(remoteRow?.updated_at==null) query=query.is("updated_at",null);
+      else query=query.eq("updated_at",remoteRow.updated_at);
+
+      const {data:written,error:writeError}=await query.select("updated_at");
+      if(writeError) throw writeError;
+      if(Array.isArray(written) && written.length){
+        const current=mergeMealIntegrity(state,working);
+        state.loggedMeals=current.loggedMeals;
+        state.mealTombstones=current.mealTombstones;
+        cacheLocal();
+        return true;
+      }
+      await new Promise(resolve=>setTimeout(resolve,60*(attempt+1)));
+    }
+    throw new Error("Pantry Planner could not safely resolve a simultaneous cloud update.");
+  }
+
   function save(){
     cacheLocal();
     if(!cloudReady || !db) return;
-    setSyncStatus("Saving…");
+    setSyncStatus("Saving safely…");
     clearTimeout(remoteSaveTimer);
     remoteSaveTimer=setTimeout(async()=>{
-      const snapshot=JSON.parse(JSON.stringify(state));
-      const {error}=await db.from("pantry_planner").update({app_data:snapshot,updated_at:new Date().toISOString()}).eq("id",SHARED_ROW_ID);
-      if(error){
+      const snapshot=cloneState(state);
+      try{
+        await writeCloudSafely(snapshot);
+        setSyncStatus("Synced", "ok");
+      }catch(error){
         console.error("Pantry Planner cloud save failed",error);
         setSyncStatus("Saved on this phone only", "error");
-      }else{
-        setSyncStatus("Synced", "ok");
       }
     },250);
   }
@@ -461,7 +541,7 @@
   function backupPayload(){
     return {
       app:"Pantry Planner",
-      version:"6.1",
+      version:"6.4",
       exportedAt:new Date().toISOString(),
       state:JSON.parse(JSON.stringify(state))
     };
@@ -492,7 +572,18 @@
       if(!hasSharedData(incoming)) throw new Error("This does not look like a Pantry Planner backup.");
       if(!confirm("Restore this backup? This will replace the current shared Pantry Planner inventory, household, shopping list, meal log, and learned meals for both devices.")) return;
 
-      state=normalizeState(incoming);
+      const beforeRestore=normalizeState(cloneState(state));
+      const restored=normalizeState(incoming);
+      const restoredIds=new Set((restored.loggedMeals||[]).map(m=>String(m.id)));
+      const restoreStamp=Date.now();
+      restored.mealTombstones={...(beforeRestore.mealTombstones||{}),...(restored.mealTombstones||{})};
+      for(const oldMeal of (beforeRestore.loggedMeals||[])){
+        if(!restoredIds.has(String(oldMeal.id))){
+          const key=String(oldMeal.id);
+          restored.mealTombstones[key]=Math.max(Number(restored.mealTombstones[key]||0),restoreStamp);
+        }
+      }
+      state=restored;
       cacheLocal();
       renderAll();
 
@@ -532,12 +623,16 @@
       const {data,error}=await db.from("pantry_planner").select("app_data,updated_at").eq("id",SHARED_ROW_ID).single();
       if(error) throw error;
 
+      let repairMealIntegrity=false;
       if(hasSharedData(data?.app_data)){
-        state=normalizeState(data.app_data);
+        const remoteState=normalizeState(data.app_data);
+        const mergedState=mergeMealIntegrity(remoteState,state);
+        repairMealIntegrity=mealIntegrityFingerprint(remoteState)!==mealIntegrityFingerprint(mergedState);
+        state=mergedState;
         cacheLocal();
         renderAll();
       }else{
-        const localSnapshot=JSON.parse(JSON.stringify(state));
+        const localSnapshot=cloneState(state);
         const {error:uploadError}=await db.from("pantry_planner").update({app_data:localSnapshot,updated_at:new Date().toISOString()}).eq("id",SHARED_ROW_ID);
         if(uploadError) throw uploadError;
       }
@@ -549,14 +644,20 @@
         .on("postgres_changes",{event:"UPDATE",schema:"public",table:"pantry_planner",filter:`id=eq.${SHARED_ROW_ID}`},payload=>{
           const incoming=payload?.new?.app_data;
           if(!hasSharedData(incoming)) return;
-          state=normalizeState(incoming);
+          const incomingState=normalizeState(incoming);
+          const mergedState=mergeMealIntegrity(incomingState,state);
+          const needsRepair=mealIntegrityFingerprint(incomingState)!==mealIntegrityFingerprint(mergedState);
+          state=mergedState;
           cacheLocal();
           renderAll();
           setSyncStatus("Synced", "ok");
+          if(needsRepair) save();
         })
         .subscribe(status=>{
           if(status==="SUBSCRIBED") setSyncStatus("Synced", "ok");
         });
+
+      if(repairMealIntegrity) save();
     }catch(e){
       console.error("Pantry Planner cloud connection failed",e);
       setSyncStatus("Offline — saved on this phone", "error");
@@ -1557,6 +1658,7 @@
     if(!confirm(`Delete this ${meal.mealType.toLowerCase()} meal? Its ingredients will be returned to Inventory.`)) return;
     const adj=applyMealEditInventory(meal.items,[]); if(!adj.ok){alert("Could not restore this meal's inventory.");return;}
     removeLearningContribution(meal.learnedKeys||[]);
+    markMealDeleted(id);
     state.loggedMeals=state.loggedMeals.filter(m=>m.id!==id);
     if(editingLoggedMealId===id) exitLoggedMealEdit();
     save(); renderFoods(); renderShopping(); renderCustomMealOptions(); renderTodayMealLog();
@@ -1916,6 +2018,8 @@
       state.foods=[];
       state.shopping=[];
       state.learnedMeals=[];
+      const resetStamp=Date.now();
+      for(const meal of (state.loggedMeals||[])) markMealDeleted(meal.id,resetStamp);
       state.loggedMeals=[];
       state.lastMealSignatures=[];
       editingFoodId=null;
