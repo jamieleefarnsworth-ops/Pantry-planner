@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v6.7</title>
+<title>Pantry Planner v6.8</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="theme-color" content="#0b5f34" />
@@ -115,7 +115,7 @@
 <div class="wrap">
   <div class="app-header">
     <img class="app-icon" src="icon-192.png" alt="Pantry Planner icon">
-    <h1>Pantry Planner v6.7</h1>
+    <h1>Pantry Planner v6.8</h1>
     <p class="muted">Shared household version. Changes sync between connected devices.</p>
     <div id="syncStatus" class="badge">Connecting…</div>
   </div>
@@ -633,7 +633,7 @@
   function backupPayload(){
     return {
       app:"Pantry Planner",
-      version:"6.7",
+      version:"6.8",
       exportedAt:new Date().toISOString(),
       state:JSON.parse(JSON.stringify(state))
     };
@@ -1411,23 +1411,59 @@
     const moved=new Date(yy,mm-1,dd,base.getHours(),base.getMinutes(),base.getSeconds(),base.getMilliseconds());
     if(Number.isNaN(moved.getTime())){ alert("Choose a valid date."); return; }
 
-    if(!meal.personDates || typeof meal.personDates!=="object") meal.personDates={};
-    if(!meal.personDateUpdatedAt || typeof meal.personDateUpdatedAt!=="object") meal.personDateUpdatedAt={};
-    if(!meal.personMealTypes || typeof meal.personMealTypes!=="object") meal.personMealTypes={};
-    if(!meal.personMealTypeUpdatedAt || typeof meal.personMealTypeUpdatedAt!=="object") meal.personMealTypeUpdatedAt={};
-
     const changeStamp=Date.now();
-    // A moved portion must keep an explicit placement, even when the chosen
-    // date/type happens to match the meal's shared base values. Deleting the
-    // override here made that person start following later base-meal changes
-    // again after refresh/sync.
-    meal.personDates[name]=moved.getTime();
-    meal.personDateUpdatedAt[name]=changeStamp;
+    const people=mealPeople(meal);
 
-    meal.personMealTypes[name]=type;
-    meal.personMealTypeUpdatedAt[name]=changeStamp;
+    if(people.length===1){
+      // This portion is already independent. Move the meal itself so there is
+      // no shared base date left for another person's sync state to affect.
+      meal.createdAt=moved.getTime();
+      meal.updatedAt=changeStamp;
+      meal.mealType=type;
+      meal.personDates={};
+      meal.personDateUpdatedAt={};
+      meal.personMealTypes={};
+      meal.personMealTypeUpdatedAt={};
+    }else{
+      // Permanently separate the selected person's portion from the shared meal.
+      // This is intentionally an internal split only: inventory is NOT touched.
+      const movedItems=[];
+      const remainingItems=[];
+      for(const item of (meal.items||[])){
+        const names=Array.isArray(item.people)?item.people:[];
+        if(names.includes(name)){
+          movedItems.push({foodId:Number(item.foodId),servings:Number(item.servings)||0,people:[name]});
+        }
+        const remainingNames=names.filter(person=>person!==name);
+        if(remainingNames.length){
+          remainingItems.push({foodId:Number(item.foodId),servings:Number(item.servings)||0,people:remainingNames});
+        }
+      }
+      if(!movedItems.length){ alert("That portion could not be found in this meal."); return; }
 
-    meal.updatedAt=changeStamp;
+      meal.items=remainingItems;
+      meal.updatedAt=changeStamp;
+      if(meal.personDates) delete meal.personDates[name];
+      if(meal.personDateUpdatedAt) delete meal.personDateUpdatedAt[name];
+      if(meal.personMealTypes) delete meal.personMealTypes[name];
+      if(meal.personMealTypeUpdatedAt) delete meal.personMealTypeUpdatedAt[name];
+
+      const movedMeal={
+        id:changeStamp+Math.random(),
+        createdAt:moved.getTime(),
+        updatedAt:changeStamp,
+        mealType:type,
+        source:meal.source||"custom",
+        learnedKeys:[],
+        personDates:{},
+        personDateUpdatedAt:{},
+        personMealTypes:{},
+        personMealTypeUpdatedAt:{},
+        items:movedItems
+      };
+      state.loggedMeals.push(movedMeal);
+    }
+
     selectedMealHistoryDate=day;
     save();
     renderTodayMealLog();
