@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v6.5</title>
+<title>Pantry Planner v6.6</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="theme-color" content="#0b5f34" />
@@ -115,7 +115,7 @@
 <div class="wrap">
   <div class="app-header">
     <img class="app-icon" src="icon-192.png" alt="Pantry Planner icon">
-    <h1>Pantry Planner v6.5</h1>
+    <h1>Pantry Planner v6.6</h1>
     <p class="muted">Shared household version. Changes sync between connected devices.</p>
     <div id="syncStatus" class="badge">Connecting…</div>
   </div>
@@ -449,8 +449,14 @@
       personDates:m.personDates && typeof m.personDates==="object" && !Array.isArray(m.personDates)
         ? Object.fromEntries(Object.entries(m.personDates).map(([name,ts])=>[String(name),Number(ts)||0]).filter(([,ts])=>ts>0))
         : {},
+      personDateUpdatedAt:m.personDateUpdatedAt && typeof m.personDateUpdatedAt==="object" && !Array.isArray(m.personDateUpdatedAt)
+        ? Object.fromEntries(Object.entries(m.personDateUpdatedAt).map(([name,ts])=>[String(name),Number(ts)||0]).filter(([,ts])=>ts>0))
+        : {},
       personMealTypes:m.personMealTypes && typeof m.personMealTypes==="object" && !Array.isArray(m.personMealTypes)
         ? Object.fromEntries(Object.entries(m.personMealTypes).filter(([,type])=>["Breakfast","Lunch","Dinner","Snack/Drink"].includes(type)))
+        : {},
+      personMealTypeUpdatedAt:m.personMealTypeUpdatedAt && typeof m.personMealTypeUpdatedAt==="object" && !Array.isArray(m.personMealTypeUpdatedAt)
+        ? Object.fromEntries(Object.entries(m.personMealTypeUpdatedAt).map(([name,ts])=>[String(name),Number(ts)||0]).filter(([,ts])=>ts>0))
         : {},
       items:Array.isArray(m.items)?m.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings)||0,people:Array.isArray(i.people)?i.people:[]})).filter(i=>Number.isFinite(i.foodId)&&i.servings>0&&i.people.length):[]
     })).filter(m=>m.items.length) : [];
@@ -488,6 +494,51 @@
     return Math.max(Number(meal?.updatedAt)||0,Number(meal?.createdAt)||0);
   }
 
+  function mergeMealRecords(a,b){
+    if(!a) return cloneState(b);
+    if(!b) return cloneState(a);
+
+    const aVersion=mealVersion(a), bVersion=mealVersion(b);
+    const newer=aVersion>=bVersion?a:b;
+    const older=aVersion>=bVersion?b:a;
+    const result=cloneState(newer);
+
+    result.personDates={...(result.personDates||{})};
+    result.personDateUpdatedAt={...(result.personDateUpdatedAt||{})};
+    result.personMealTypes={...(result.personMealTypes||{})};
+    result.personMealTypeUpdatedAt={...(result.personMealTypeUpdatedAt||{})};
+
+    const dateNames=new Set([
+      ...Object.keys(a.personDates||{}),...Object.keys(b.personDates||{}),
+      ...Object.keys(a.personDateUpdatedAt||{}),...Object.keys(b.personDateUpdatedAt||{})
+    ]);
+    for(const name of dateNames){
+      const aStamp=Number(a.personDateUpdatedAt?.[name]) || (a.personDates?.[name]!=null ? aVersion : 0);
+      const bStamp=Number(b.personDateUpdatedAt?.[name]) || (b.personDates?.[name]!=null ? bVersion : 0);
+      const source=aStamp>=bStamp?a:b;
+      const stamp=Math.max(aStamp,bStamp);
+      if(stamp>0) result.personDateUpdatedAt[name]=stamp;
+      if(source.personDates && Object.prototype.hasOwnProperty.call(source.personDates,name)) result.personDates[name]=Number(source.personDates[name]);
+      else delete result.personDates[name];
+    }
+
+    const typeNames=new Set([
+      ...Object.keys(a.personMealTypes||{}),...Object.keys(b.personMealTypes||{}),
+      ...Object.keys(a.personMealTypeUpdatedAt||{}),...Object.keys(b.personMealTypeUpdatedAt||{})
+    ]);
+    for(const name of typeNames){
+      const aStamp=Number(a.personMealTypeUpdatedAt?.[name]) || (a.personMealTypes?.[name]!=null ? aVersion : 0);
+      const bStamp=Number(b.personMealTypeUpdatedAt?.[name]) || (b.personMealTypes?.[name]!=null ? bVersion : 0);
+      const source=aStamp>=bStamp?a:b;
+      const stamp=Math.max(aStamp,bStamp);
+      if(stamp>0) result.personMealTypeUpdatedAt[name]=stamp;
+      if(source.personMealTypes && Object.prototype.hasOwnProperty.call(source.personMealTypes,name)) result.personMealTypes[name]=source.personMealTypes[name];
+      else delete result.personMealTypes[name];
+    }
+
+    return result;
+  }
+
   function mergeMealIntegrity(primary,secondary){
     const merged=normalizeState(cloneState(primary||{}));
     const other=normalizeState(cloneState(secondary||{}));
@@ -501,8 +552,7 @@
     const byId=new Map();
     for(const meal of [...(merged.loggedMeals||[]),...(other.loggedMeals||[])]){
       const key=String(meal.id);
-      const existing=byId.get(key);
-      if(!existing || mealVersion(meal)>mealVersion(existing)) byId.set(key,cloneState(meal));
+      byId.set(key,mergeMealRecords(byId.get(key),meal));
     }
 
     merged.mealTombstones=tombstones;
@@ -520,7 +570,11 @@
 
   function mealIntegrityFingerprint(value){
     const normalized=normalizeState(cloneState(value||{}));
-    const meals=(normalized.loggedMeals||[]).map(m=>[String(m.id),mealVersion(m)]).sort((a,b)=>a[0].localeCompare(b[0]));
+    const meals=(normalized.loggedMeals||[]).map(m=>[
+      String(m.id),mealVersion(m),
+      Object.entries(m.personDateUpdatedAt||{}).sort((a,b)=>a[0].localeCompare(b[0])),
+      Object.entries(m.personMealTypeUpdatedAt||{}).sort((a,b)=>a[0].localeCompare(b[0]))
+    ]).sort((a,b)=>a[0].localeCompare(b[0]));
     const tombstones=Object.entries(normalized.mealTombstones||{}).map(([id,ts])=>[String(id),Number(ts)||0]).sort((a,b)=>a[0].localeCompare(b[0]));
     return JSON.stringify({meals,tombstones});
   }
@@ -579,7 +633,7 @@
   function backupPayload(){
     return {
       app:"Pantry Planner",
-      version:"6.5",
+      version:"6.6",
       exportedAt:new Date().toISOString(),
       state:JSON.parse(JSON.stringify(state))
     };
@@ -1357,15 +1411,20 @@
     if(Number.isNaN(moved.getTime())){ alert("Choose a valid date."); return; }
 
     if(!meal.personDates || typeof meal.personDates!=="object") meal.personDates={};
+    if(!meal.personDateUpdatedAt || typeof meal.personDateUpdatedAt!=="object") meal.personDateUpdatedAt={};
     if(!meal.personMealTypes || typeof meal.personMealTypes!=="object") meal.personMealTypes={};
+    if(!meal.personMealTypeUpdatedAt || typeof meal.personMealTypeUpdatedAt!=="object") meal.personMealTypeUpdatedAt={};
 
+    const changeStamp=Date.now();
     if(localDayKey(moved.getTime())===localDayKey(meal.createdAt)) delete meal.personDates[name];
     else meal.personDates[name]=moved.getTime();
+    meal.personDateUpdatedAt[name]=changeStamp;
 
     if(type===meal.mealType) delete meal.personMealTypes[name];
     else meal.personMealTypes[name]=type;
+    meal.personMealTypeUpdatedAt[name]=changeStamp;
 
-    meal.updatedAt=Date.now();
+    meal.updatedAt=changeStamp;
     selectedMealHistoryDate=day;
     save();
     renderTodayMealLog();
@@ -1875,7 +1934,9 @@
       meal.items=newItems; meal.mealType=type; meal.createdAt=movedDate.getTime(); meal.updatedAt=Date.now();
       const activePeople=new Set(newItems.flatMap(i=>i.people||[]));
       meal.personDates=Object.fromEntries(Object.entries(meal.personDates||{}).filter(([name])=>activePeople.has(name)));
+      meal.personDateUpdatedAt=Object.fromEntries(Object.entries(meal.personDateUpdatedAt||{}).filter(([name])=>activePeople.has(name)));
       meal.personMealTypes=Object.fromEntries(Object.entries(meal.personMealTypes||{}).filter(([name])=>activePeople.has(name)));
+      meal.personMealTypeUpdatedAt=Object.fromEntries(Object.entries(meal.personMealTypeUpdatedAt||{}).filter(([name])=>activePeople.has(name)));
       meal.learnedKeys=meal.source==="custom" && type!=="Snack/Drink" ? addLearningContribution(newItems,type) : [];
       selectedMealHistoryDate=chosenDay;
       save(); renderFoods(); renderShopping(); renderTodayMealLog();
