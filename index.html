@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v6.6</title>
+<title>Pantry Planner v6.7</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="theme-color" content="#0b5f34" />
@@ -115,7 +115,7 @@
 <div class="wrap">
   <div class="app-header">
     <img class="app-icon" src="icon-192.png" alt="Pantry Planner icon">
-    <h1>Pantry Planner v6.6</h1>
+    <h1>Pantry Planner v6.7</h1>
     <p class="muted">Shared household version. Changes sync between connected devices.</p>
     <div id="syncStatus" class="badge">Connecting…</div>
   </div>
@@ -395,7 +395,7 @@
   const SUPABASE_URL = "https://melincekmtfytfwdgdqa.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9cxk75LRH8rYcMOBrp5IgA_3vfJWl0a";
   const SHARED_ROW_ID = 1;
-  const DATA_INTEGRITY_SYNC_VERSION = 1; // v6.4: conflict-resistant meal log sync
+  const DATA_INTEGRITY_SYNC_VERSION = 2; // v6.7: explicit per-person meal placement persistence
   const seed = {
     people:[
       {id:1,name:"Jamie",breakfast:500,lunch:500,dinner:500,snack:200,daily:1800,protein:100},
@@ -633,7 +633,7 @@
   function backupPayload(){
     return {
       app:"Pantry Planner",
-      version:"6.6",
+      version:"6.7",
       exportedAt:new Date().toISOString(),
       state:JSON.parse(JSON.stringify(state))
     };
@@ -1405,6 +1405,7 @@
     const day=$("#movePortionDate").value;
     const type=$("#movePortionMealType").value;
     if(!day){ alert("Choose a date."); return; }
+    if(day>localDayKey(Date.now())){ alert("Meal date cannot be in the future."); return; }
     const base=new Date(mealDateForPerson(meal,name));
     const [yy,mm,dd]=day.split("-").map(Number);
     const moved=new Date(yy,mm-1,dd,base.getHours(),base.getMinutes(),base.getSeconds(),base.getMilliseconds());
@@ -1416,12 +1417,14 @@
     if(!meal.personMealTypeUpdatedAt || typeof meal.personMealTypeUpdatedAt!=="object") meal.personMealTypeUpdatedAt={};
 
     const changeStamp=Date.now();
-    if(localDayKey(moved.getTime())===localDayKey(meal.createdAt)) delete meal.personDates[name];
-    else meal.personDates[name]=moved.getTime();
+    // A moved portion must keep an explicit placement, even when the chosen
+    // date/type happens to match the meal's shared base values. Deleting the
+    // override here made that person start following later base-meal changes
+    // again after refresh/sync.
+    meal.personDates[name]=moved.getTime();
     meal.personDateUpdatedAt[name]=changeStamp;
 
-    if(type===meal.mealType) delete meal.personMealTypes[name];
-    else meal.personMealTypes[name]=type;
+    meal.personMealTypes[name]=type;
     meal.personMealTypeUpdatedAt[name]=changeStamp;
 
     meal.updatedAt=changeStamp;
