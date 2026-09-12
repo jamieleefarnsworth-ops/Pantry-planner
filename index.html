@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pantry Planner v6.10</title>
+<title>Pantry Planner v6.11</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="theme-color" content="#0b5f34" />
@@ -95,7 +95,7 @@
 <div class="wrap">
   <div class="app-header">
     <img class="app-icon" src="icon-192.png" alt="Pantry Planner icon">
-    <h1>Pantry Planner v6.10</h1>
+    <h1>Pantry Planner v6.11</h1>
     <p class="muted">Shared household version. Changes sync between connected devices.</p>
     <div id="syncStatus" class="badge">Connecting…</div>
   </div>
@@ -207,7 +207,7 @@
   function cacheLocal(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}
   function setSyncStatus(text,mode=""){const el=document.querySelector("#syncStatus");if(!el)return;el.textContent=text;el.style.borderColor=mode==="error"?"var(--danger)":mode==="ok"?"var(--accent)":"var(--border)";}
   function cloneState(value){return JSON.parse(JSON.stringify(value));}
-  function mealVersion(meal){return Math.max(Number(meal?.updatedAt)||0,Number(meal?.createdAt)||0);}
+  function mealVersion(meal){const updated=Number(meal?.updatedAt)||0;return updated>0?updated:(Number(meal?.createdAt)||0);}
 
   function mergeMealRecords(a,b){
     if(!a)return cloneState(b); if(!b)return cloneState(a);
@@ -229,7 +229,7 @@
   async function writeCloudSafely(localSnapshot){let working=normalizeState(cloneState(localSnapshot));for(let attempt=0;attempt<5;attempt++){const {data:remoteRow,error:readError}=await db.from("pantry_planner").select("app_data,updated_at").eq("id",SHARED_ROW_ID).single();if(readError)throw readError;if(hasSharedData(remoteRow?.app_data))working=mergeMealIntegrity(working,remoteRow.app_data);const nextStamp=new Date().toISOString();let query=db.from("pantry_planner").update({app_data:cloneState(working),updated_at:nextStamp}).eq("id",SHARED_ROW_ID);if(remoteRow?.updated_at==null)query=query.is("updated_at",null);else query=query.eq("updated_at",remoteRow.updated_at);const {data:written,error:writeError}=await query.select("updated_at");if(writeError)throw writeError;if(Array.isArray(written)&&written.length){const current=mergeMealIntegrity(state,working);state.loggedMeals=current.loggedMeals;state.mealTombstones=current.mealTombstones;cacheLocal();return true;}await new Promise(resolve=>setTimeout(resolve,60*(attempt+1)));}throw new Error("Pantry Planner could not safely resolve a simultaneous cloud update.");}
   function save(){cacheLocal();if(!cloudReady||!db)return;setSyncStatus("Saving safely…");clearTimeout(remoteSaveTimer);remoteSaveTimer=setTimeout(async()=>{const snapshot=cloneState(state);try{await writeCloudSafely(snapshot);setSyncStatus("Synced","ok");}catch(error){console.error("Pantry Planner cloud save failed",error);setSyncStatus("Saved on this phone only","error");}},250);}
   function hasSharedData(data){return !!(data&&typeof data==="object"&&(Array.isArray(data.foods)||Array.isArray(data.people)||Array.isArray(data.shopping)));}
-  function backupPayload(){return {app:"Pantry Planner",version:"6.10",exportedAt:new Date().toISOString(),state:JSON.parse(JSON.stringify(state))};}
+  function backupPayload(){return {app:"Pantry Planner",version:"6.11",exportedAt:new Date().toISOString(),state:JSON.parse(JSON.stringify(state))};}
   function downloadBackup(){const payload=backupPayload(),blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),stamp=new Date().toISOString().slice(0,10),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`Pantry-Planner-Backup-${stamp}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);const msg=document.querySelector("#backupMsg");if(msg)msg.textContent=`Backup created ${new Date().toLocaleString()}. Keep the file somewhere safe.`;}
 
   async function restoreFromFile(file){if(!file)return;try{const text=await file.text(),parsed=JSON.parse(text),incoming=parsed&&parsed.state?parsed.state:parsed;if(!hasSharedData(incoming))throw new Error("This does not look like a Pantry Planner backup.");if(!confirm("Restore this backup? This will replace the current shared Pantry Planner inventory, household, shopping list, meal log, and learned meals for both devices."))return;const beforeRestore=normalizeState(cloneState(state)),restored=normalizeState(incoming),restoredIds=new Set((restored.loggedMeals||[]).map(m=>String(m.id))),restoreStamp=Date.now();restored.mealTombstones={...(beforeRestore.mealTombstones||{}),...(restored.mealTombstones||{})};for(const oldMeal of (beforeRestore.loggedMeals||[])){if(!restoredIds.has(String(oldMeal.id))){const key=String(oldMeal.id);restored.mealTombstones[key]=Math.max(Number(restored.mealTombstones[key]||0),restoreStamp);}}state=restored;cacheLocal();renderAll();if(cloudReady&&db){setSyncStatus("Restoring…");clearTimeout(remoteSaveTimer);const snapshot=JSON.parse(JSON.stringify(state));const {error}=await db.from("pantry_planner").update({app_data:snapshot,updated_at:new Date().toISOString()}).eq("id",SHARED_ROW_ID);if(error)throw error;setSyncStatus("Synced","ok");}else save();const msg=document.querySelector("#backupMsg");if(msg)msg.textContent="Backup restored successfully. The restored data is now the shared Pantry Planner state.";alert("Pantry Planner backup restored successfully.");}catch(err){console.error("Pantry Planner restore failed",err);const msg=document.querySelector("#backupMsg");if(msg)msg.textContent="Restore failed. Choose a Pantry Planner backup JSON file.";alert("That backup could not be restored. Please choose a valid Pantry Planner backup file.");}finally{const input=document.querySelector("#restoreFile");if(input)input.value="";}}
