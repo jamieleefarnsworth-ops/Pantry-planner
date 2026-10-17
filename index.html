@@ -632,14 +632,14 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   function preparedCount(recipeId){return preparedForRecipe(recipeId).reduce((n,x)=>n+Number(x.remainingPortions),0);}
   function scheduledNeeds(recipeId){return (state.scheduleEntries||[]).filter(e=>String(e.recipeId)===String(recipeId)).length;}
   function scheduleMealDate(date){const [y,m,d]=date.split('-').map(Number);return new Date(y,m-1,d,12,0,0).getTime();}
-  function logScheduledPrepared(entries,amount){
+  function logScheduledPrepared(entries,amount,logDate){
     const e=entries[0],r=state.recipes.find(x=>String(x.id)===String(e.recipeId)),person=state.people.find(x=>Number(x.id)===Number(e.personId));if(!r||!person)return;
     const leftovers=preparedForRecipe(r.id);if(preparedCount(r.id)+1e-8<amount){alert('Not enough prepared servings. Make a batch first.');return;}
     let remaining=amount;
     for(const entry of entries.slice(0,amount)){
       const batch=leftovers.find(x=>x.remainingPortions>=1-1e-8);if(!batch){alert('No prepared serving available.');return;}
       const ok=logLeftoverPortions(batch,1,person.name);if(!ok)return;
-      const logged=state.loggedMeals[state.loggedMeals.length-1];logged.createdAt=scheduleMealDate(entry.date);logged.updatedAt=Date.now();logged.mealType=entry.mealType;
+      const logged=state.loggedMeals[state.loggedMeals.length-1];logged.createdAt=scheduleMealDate(logDate);logged.updatedAt=Date.now();logged.mealType=entry.mealType;
       remaining--;
     }
     const used=new Set(entries.slice(0,amount).map(x=>x.key));
@@ -668,6 +668,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
           <div style="min-width:0;flex:1"><div class="muted small" style="font-size:.76rem;line-height:1.1">${esc(scheduledDate)} · ${esc(e.mealType)} · ${esc(person.name)} · ${count} scheduled</div><div style="font-size:1.08rem;font-weight:700;line-height:1.25;margin:3px 0;overflow-wrap:anywhere">${esc(r.name)}</div><div class="muted small" style="font-size:.72rem">${Number(prepared.toFixed(2))} prepared servings available</div></div>
           <div class="small" style="white-space:nowrap;text-align:right;font-size:.76rem">${Math.round(n.cal/batch)} cal<br><span style="color:#39E27D">P${Math.round(n.protein/batch)}</span> <span style="color:#55B4FF">C${Math.round(n.carbs/batch)}</span> <span style="color:#FF6652">F${Math.round(n.fat/batch)}</span></div>
         </div>
+        ${ready?`<label class="small" style="display:flex;align-items:center;gap:8px;margin-top:7px">Date eaten <input type="date" data-log-scheduled-date="${esc(key)}" value="${scheduleKey(new Date())}" style="flex:1;min-width:0;margin:0;padding:7px"></label>`:''}
         <div class="row" style="gap:8px;align-items:center;margin-top:7px;flex-wrap:nowrap"><label style="display:flex;align-items:center;gap:7px;flex:0 0 auto;font-size:.8rem;margin:0">${ready?'Log':'Batch'} <input aria-label="${ready?'Amount to log':'Batches to make'}" data-make-amount="${esc(key)}" type="number" min="1" max="${ready?Math.min(count,Math.floor(prepared)):1}" step="1" value="1" style="width:66px;min-width:0;margin:0;padding:8px 6px;text-align:center" ${ready?'':'disabled'}></label><button class="btn primary" style="flex:1;min-width:0;margin:0;padding:9px 10px" data-make-scheduled="${esc(key)}" type="button">${button}</button></div>
       </div>`;
     }).join(''):'<p class="muted">No saved planned meals. Choose recipes in the schedule and press Save Plan.</p>';
@@ -677,8 +678,10 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
       if(preparedCount(r.id)<1-1e-8){makeScheduledBatch(r,person,e.mealType);return;}
       const input=Array.from(host.querySelectorAll('[data-make-amount]')).find(x=>x.dataset.makeAmount===key),amount=Number(input?.value);
       if(!Number.isInteger(amount)||amount<1||amount>items.length||amount>Math.floor(preparedCount(r.id)+1e-8)){alert('Choose a whole number of prepared servings up to the scheduled amount.');return;}
-      if(!confirm(`Log ${amount} serving${amount===1?'':'s'} of ${r.name} for ${person.name} on ${e.date}?`))return;
-      logScheduledPrepared(items,amount);
+      const logDate=Array.from(host.querySelectorAll('[data-log-scheduled-date]')).find(x=>x.dataset.logScheduledDate===key)?.value;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(logDate||'')||Number.isNaN(scheduleMealDate(logDate))){alert('Choose a valid date eaten.');return;}
+      if(!confirm(`Log ${amount} serving${amount===1?'':'s'} of ${r.name} for ${person.name} on ${logDate}?`))return;
+      logScheduledPrepared(items,amount,logDate);
     });
   }
   function renderMealPool(){renderSavedSchedulePool();const select=$("#poolRecipeSelect"),list=$("#poolEntries");if(!select||!list)return;const selected=select.value;select.innerHTML=(state.recipes||[]).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("");if([...select.options].some(o=>o.value===selected))select.value=selected;const pool=state.mealPool||[];const plannedPortions=pool.reduce((total,e)=>{const recipe=(state.recipes||[]).find(r=>String(r.id)===String(e.recipeId));return total+(Number(e.batches)||0)*(Number(recipe?.batchServings)||1)},0);$("#poolMealCount").textContent=Number(plannedPortions.toFixed(2)).toLocaleString();$("#poolStatus").textContent=pool.length?`${pool.reduce((a,e)=>a+e.batches,0)} batches selected · Shopping suggestions update automatically`:'Select recipes to build your next shopping list.';list.innerHTML=pool.length?pool.map(e=>{const r=state.recipes.find(x=>String(x.id)===String(e.recipeId));if(!r)return'';const n=Number(r.batchServings)||1;const people=state.people.filter(p=>(r.personIds||[]).map(Number).includes(Number(p.id)));return`<div class="card" style="margin-bottom:10px"><div class="between"><div><h3>${esc(r.name)}</h3><p class="muted small">${e.batches} batch(es) · ${Number((e.batches*n).toFixed(2))} finished servings · ${e.armed?'Stocked / active':'Shopping planned'}</p></div><button class="btn danger" data-pool-remove="${esc(e.recipeId)}" type="button">Remove</button></div><div class="row" style="margin-top:10px;align-items:end"><button class="btn" data-pool-minus="${esc(e.recipeId)}" type="button">−</button><strong>${e.batches}</strong><button class="btn" data-pool-plus="${esc(e.recipeId)}" type="button">+</button><label style="min-width:120px">Who ate?<select data-pool-person="${esc(e.recipeId)}">${people.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label><label style="min-width:105px">Eat now<input data-pool-eat="${esc(e.recipeId)}" type="number" min="0" max="${n}" step="0.25" value="${Math.min(1,n)}"></label><label style="min-width:115px">Meal<select data-pool-type="${esc(e.recipeId)}">${(r.mealTypes||[]).map(t=>`<option>${esc(t)}</option>`).join('')}</select></label><button class="btn primary" data-pool-make="${esc(e.recipeId)}" type="button" ${people.length?'':'disabled'}>Make Meal</button></div></div>`;}).join(''):'<p class="muted">Your Planned Meals is empty. Add recipes above before shopping.</p>';
