@@ -855,8 +855,7 @@ if ('serviceWorker' in navigator) {
  const panels = [...document.querySelectorAll('.tab-panel')];
  const nav = [...document.querySelectorAll('.v8-bottom-nav [data-v8-nav]')];
  const meal = $('#meal'), nutrition = $('#nutrition'), today = $('#today');
- const divider = meal.querySelector('.meal-section-divider');
- const history = divider && divider.nextElementSibling;
+ const history = document.querySelector('#todayMealLog')?.closest('.panel');
  // Show the nutrition summaries first, followed immediately by the logged meals.
  if(nutrition) while(nutrition.firstChild) today.appendChild(nutrition.firstChild);
  if(history){ const slot=document.createElement('div'); slot.id='v8DiarySlot'; slot.style.marginTop='16px'; today.appendChild(slot); slot.appendChild(history); }
