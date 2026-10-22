@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Pantry Planner v8.0.0.6 — Preview</title>
+<title>Pantry Planner v8.0.0.7 — Preview</title>
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
 <meta content="#0b5f34" name="theme-color"/>
@@ -115,7 +115,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 #v8NutritionHistory .nutrition-cards{display:grid;gap:12px}
 </style>
 <style>
-/* Unified Pantry Planner dialog and notification theme — v8.0.0.6 */
+/* Unified Pantry Planner dialog and notification theme — v8.0.0.7 */
 #batchAssignmentDialog, #pantryDialogLayer {background:rgba(0,0,0,.76)!important;color:var(--text);}
 #batchAssignmentDialog > div, #pantryDialogCard {background:var(--panel)!important;color:var(--text)!important;border:1px solid var(--border)!important;border-radius:18px!important;box-shadow:0 20px 60px rgba(0,0,0,.6)!important;}
 #batchAssignmentDialog h2, #pantryDialogTitle {color:var(--text)!important;}
@@ -140,7 +140,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="wrap">
 <div class="app-header">
 <img alt="Pantry Planner icon" class="app-icon" src="icon-192.png"/>
-<h1>Pantry Planner v8.0.0.6</h1>
+<h1>Pantry Planner v8.0.0.7</h1>
 <p class="muted">Shared household version. Changes sync between connected devices.</p>
 <div class="badge" id="syncStatus">Connecting…</div>
 </div>
@@ -631,12 +631,27 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   }
   function allocationRemaining(batch,person){return batch.allocations?Number(batch.allocations[person]||0):0;}
   function logAssignedBatch(batch,person,amount,date){
-    if(!batch||!Number.isFinite(amount)||amount<=0||amount>allocationRemaining(batch,person)+1e-8){appNotify('Not enough prepared servings assigned to this person.');return;}
-    if(!logLeftoverPortions(batch,amount,person,true))return;
-    batch.allocations[person]=Number((allocationRemaining(batch,person)-amount).toFixed(2));
+    // Resolve the current batch by ID, rather than relying on a card's older reference.
+    const current=(state.leftovers||[]).find(x=>String(x.id)===String(batch?.id));
+    const available=current?allocationRemaining(current,person):0;
+    if(!current||!Number.isFinite(amount)||amount<=0||amount>available+1e-8){appNotify('Not enough prepared servings assigned to this person.');return;}
+    if(!logLeftoverPortions(current,amount,person,true))return;
+    current.allocations[person]=Math.max(0,Number((available-amount).toFixed(2)));
     const meal=state.loggedMeals[state.loggedMeals.length-1];
     if(date){meal.createdAt=scheduleMealDate(date);meal.updatedAt=Date.now();}
-    save();renderMealPool();renderLeftovers();renderTodayMealLog();renderNutrition();renderShopping();
+    // When this prepared serving also occupies a scheduled slot, complete that slot.
+    // Never remove another person's meal or a different recipe.
+    const owner=state.people.find(p=>p.name===person);
+    const matching=(state.scheduleEntries||[]).filter(e=>owner&&Number(e.personId)===Number(owner.id)&&String(e.recipeId)===String(current.recipeId)&&current.recipeId!=null).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const completed=matching.slice(0,Math.min(Math.floor(amount+1e-8),matching.length));
+    if(completed.length){
+      const completedKeys=new Set(completed.map(e=>e.key));
+      state.scheduleEntries=state.scheduleEntries.filter(e=>!completedKeys.has(e.key));
+      for(const e of completed){scheduleEdits.add(e.key);scheduleDraft[e.key]='';}
+    }
+    // Fully consumed assigned servings must never reappear in the planned-meal cards.
+    if(current.remainingPortions<=1e-8){state.leftovers=state.leftovers.filter(x=>String(x.id)!==String(current.id));}
+    save();renderMealPool();renderMealSchedule();renderLeftovers();renderTodayMealLog();renderNutrition();renderShopping();
   }
   function leftoverLogItem(leftover,portions,person){return {outside:true,name:leftover.name,servings:Number(portions),people:[person],cal:leftover.calPerPortion*portions,protein:leftover.proteinPerPortion*portions,carbs:leftover.carbsPerPortion*portions,fat:leftover.fatPerPortion*portions};}
   function logLeftoverPortions(leftover,portions,person,assigned=false){if(!person||portions<=0)return false;if(!assigned&&leftover.allocations&&portions>Math.max(0,Number(leftover.remainingPortions)-Object.values(leftover.allocations).reduce((n,v)=>n+Number(v||0),0))+1e-9){appNotify("These servings are assigned in Planned Meals. Log them there instead.");return false;}if(portions>leftover.remainingPortions+1e-9){appNotify("Not enough portions remain.");return false;}const now=Date.now(),item=leftoverLogItem(leftover,portions,person);state.loggedMeals.push({id:`${now}-leftover-${Math.random()}`,createdAt:now,updatedAt:now,mealType:leftover.mealType,source:"leftover",items:[item],learnedKeys:[],personDates:{},personDateUpdatedAt:{},personMealTypes:{},personMealTypeUpdatedAt:{}});leftover.remainingPortions=Number((leftover.remainingPortions-portions).toFixed(2));leftover.updatedAt=now;if(leftover.remainingPortions<=0)state.leftovers=state.leftovers.filter(x=>String(x.id)!==String(leftover.id));return true;}
@@ -807,7 +822,22 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
     });
   }
   function renderMealPool(){renderSavedSchedulePool();const select=$("#poolRecipeSelect"),list=$("#poolEntries");if(!select||!list)return;const selected=select.value;select.innerHTML=(state.recipes||[]).map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("");if([...select.options].some(o=>o.value===selected))select.value=selected;const pool=state.mealPool||[];const plannedPortions=pool.reduce((total,e)=>{const recipe=(state.recipes||[]).find(r=>String(r.id)===String(e.recipeId));return total+(Number(e.batches)||0)*(Number(recipe?.batchServings)||1)},0);[["poolCountJamie",state.people[0]],["poolCountJackie",state.people[1]]].forEach(([id,person])=>{
-      const scheduled=(state.scheduleEntries||[]).filter(e=>person&&Number(e.personId)===Number(person.id)).length;const prepared=(state.leftovers||[]).reduce((n,b)=>n+(person?allocationRemaining(b,person.name):0),0);const total=scheduled+prepared;
+      const personEntries=(state.scheduleEntries||[]).filter(e=>person&&Number(e.personId)===Number(person.id));
+      const scheduled=personEntries.length;
+      const prepared=(state.leftovers||[]).reduce((n,b)=>n+(person?allocationRemaining(b,person.name):0),0);
+      // A prepared portion for an already-scheduled recipe fills that scheduled slot;
+      // it is not an additional meal. Count only surplus prepared portions separately.
+      const scheduledByRecipe=new Map();
+      for(const e of personEntries){const k=String(e.recipeId);scheduledByRecipe.set(k,(scheduledByRecipe.get(k)||0)+1);}
+      const preparedByRecipe=new Map();let unscheduledPrepared=0;
+      for(const b of (state.leftovers||[])){
+        const n=person?allocationRemaining(b,person.name):0;if(n<=0)continue;
+        if(b.recipeId==null){unscheduledPrepared+=n;continue;}
+        const k=String(b.recipeId);preparedByRecipe.set(k,(preparedByRecipe.get(k)||0)+n);
+      }
+      let additional=unscheduledPrepared;
+      for(const [k,n] of preparedByRecipe)additional+=Math.max(0,n-(scheduledByRecipe.get(k)||0));
+      const total=scheduled+additional;
       const days=Math.floor(total/3),extra=total%3;
       const label=[days?`${days} day${days===1?'':'s'}`:'',extra?`${extra} meal${extra===1?'':'s'}`:''].filter(Boolean).join(', ')||'0 meals';
       const node=document.getElementById(id);
