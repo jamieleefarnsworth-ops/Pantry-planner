@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Pantry Planner v8.0.0.10 — Preview</title>
+<title>Pantry Planner v8.0.0.11 — Preview</title>
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
 <meta content="#0b5f34" name="theme-color"/>
@@ -140,14 +140,14 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="wrap">
 <div class="app-header">
 <img alt="Pantry Planner icon" class="app-icon" src="icon-192.png"/>
-<h1>Pantry Planner v8.0.0.10</h1>
+<h1>Pantry Planner v8.0.0.11</h1>
 <p class="muted">Shared household version. Changes sync between connected devices.</p>
 <div class="badge" id="syncStatus">Connecting…</div>
 </div>
 <section class="tab-panel" id="today"><div class="panel"><h2>Today · Household</h2><p class="muted small">Both household members' daily nutrition in one place.</p><div class="row"><button class="btn primary" data-v8-nav="add" type="button">+ Add Food</button><button class="btn" data-v8-nav="today" data-v8-scroll="history" type="button">Meal History</button></div></div></section>
 <section class="tab-panel hidden" id="add"><div class="panel"><h2>What would you like to add?</h2><p class="muted small">Choose how you want to prepare or log a meal.</p><div class="v8-category-grid"><button class="btn" data-v8-category="planned" type="button">Planned Meals</button><button class="btn" data-v8-category="custom" type="button">Build My Own</button><button class="btn" data-v8-category="outside" type="button">Outside Food</button><button class="btn" data-v8-category="leftovers" type="button">Leftovers</button></div></div></section>
-<section class="tab-panel hidden" id="more"><div class="panel"><h2>More</h2><div class="v8-category-grid"><button class="btn" data-v8-nav="inventory">Inventory</button><button class="btn" data-v8-nav="household">Household</button><button class="btn" data-v8-category="recipes">Manage Recipes</button><button class="btn" id="v8OpenNutritionHistory" type="button">Nutrition History</button></div></div><div id="v8NutritionHistory" class="panel hidden"><h2>Nutrition History</h2><p class="muted small">Daily nutrition for each household member, newest first. Includes meals, snacks and drinks.</p><div id="v8NutritionHistoryDays"></div></div></section>
-<nav aria-label="Main navigation" class="v8-bottom-nav"><button class="active" data-v8-nav="today" type="button"><span>⌂</span>Today</button><button data-v8-nav="plan" type="button"><span>▦</span>Plan</button><button data-v8-nav="add" type="button"><span>＋</span>Add Food</button><button data-v8-nav="shopping" type="button"><span>🛒</span>Shopping List</button><button data-v8-nav="more" type="button"><span>☰</span>More</button></nav>
+<section class="tab-panel hidden" id="more"><div class="panel"><h2>More</h2><div class="v8-category-grid"><button class="btn" data-v8-nav="household">Household</button><button class="btn" data-v8-category="recipes">Manage Recipes</button><button class="btn" id="v8OpenNutritionHistory" type="button">Nutrition History</button></div></div><div id="v8NutritionHistory" class="panel hidden"><h2>Nutrition History</h2><p class="muted small">Daily nutrition for each household member, newest first. Includes meals, snacks and drinks.</p><div id="v8NutritionHistoryDays"></div></div></section>
+<nav aria-label="Main navigation" class="v8-bottom-nav"><button class="active" data-v8-nav="today" type="button"><span>⌂</span>Today</button><button data-v8-nav="inventory" type="button"><span>▣</span>Inventory</button><button data-v8-nav="add" type="button"><span>＋</span>Add Food</button><button data-v8-nav="shopping" type="button"><span>🛒</span>Shopping List</button><button data-v8-nav="more" type="button"><span>☰</span>More</button></nav>
 <section class="tab-panel hidden" id="inventory">
 <div class="panel">
 <div class="between"><div><h2>Food inventory</h2><p class="muted">Add or edit ingredients you have on hand. Food role helps Pantry Planner build meals that make sense together.</p></div><div class="row"><span class="badge" id="inventoryCount">0 items</span><button class="btn danger" id="resetInventory" type="button">Reset inventory</button></div></div>
@@ -1009,7 +1009,7 @@ if ('serviceWorker' in navigator) {
  function show(id){
    const target=$('#'+id); if(!target)return;
    panels.forEach(p=>p.classList.toggle('hidden',p!==target));
-   const active=(id==='meal')?'add':(['inventory','household','nutrition'].includes(id)?'more':id);
+   const active=(id==='meal')?'add':(['household','nutrition'].includes(id)?'more':id);
    nav.forEach(b=>b.classList.toggle('active',b.dataset.v8Nav===active));
    window.scrollTo({top:0,behavior:'instant'});
  }
