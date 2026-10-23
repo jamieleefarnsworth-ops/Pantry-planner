@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Pantry Planner v8.0.0.13 — Preview</title>
+<title>Pantry Planner v8.0.0.14 — Preview</title>
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
 <meta content="#0b5f34" name="theme-color"/>
@@ -127,6 +127,31 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 #v8NutritionHistory .v8-history-day{margin-top:18px;padding-top:14px;border-top:1px solid #39413d}
 #v8NutritionHistory .v8-history-day>h3{margin:0 0 12px}
 #v8NutritionHistory .nutrition-cards{display:grid;gap:12px}
+
+/* v8.0.0.14 compact inventory entry */
+.inventory-compact-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.inventory-compact-heading h2{margin:0}
+.inventory-compact-form{display:grid;gap:10px}
+.inventory-compact-form label{min-width:0}
+.inventory-compact-form input,.inventory-compact-form select{width:100%;min-width:0}
+.inventory-compact-form .inventory-name input{margin:0}
+.inventory-macro-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.inventory-macro-grid label{font-size:11px;line-height:1.4;text-align:center;font-weight:600;letter-spacing:0}
+.inventory-macro-grid input{margin-top:4px;padding:10px 2px;font-size:15px;text-align:center;min-height:44px;appearance:textfield}
+.inventory-macro-grid input::-webkit-inner-spin-button,.inventory-macro-grid input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.inventory-meal-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.inventory-meal-checks{display:flex;gap:8px;flex-wrap:wrap}
+.inventory-meal-checks label{display:flex;align-items:center;gap:3px;font-size:12px;white-space:nowrap}
+.inventory-meal-checks input{width:17px;height:17px;margin:0;accent-color:var(--accent)}
+.inventory-extra{border:1px solid var(--border);border-radius:10px;padding:10px}
+.inventory-extra summary{cursor:pointer;font-size:14px;font-weight:600}
+.inventory-extra summary span{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:3px}
+.inventory-extra-fields{display:grid;gap:10px;margin-top:12px}
+.inventory-actions{display:flex;gap:8px}
+.inventory-actions #saveFoodBtn{flex:1}
+.inventory-maintenance summary{cursor:pointer;font-weight:600}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:380px){.inventory-macro-grid{gap:3px}.inventory-macro-grid input{font-size:14px}.inventory-meal-checks{gap:5px}.inventory-meal-checks label{font-size:11px}}
 </style>
 <style>
 /* Unified Pantry Planner dialog and notification theme — v8.0.0.9 */
@@ -154,7 +179,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="wrap">
 <div class="app-header">
 <img alt="Pantry Planner icon" class="app-icon" src="icon-192.png"/>
-<h1>Pantry Planner v8.0.0.13</h1>
+<h1>Pantry Planner v8.0.0.14</h1>
 <p class="muted">Shared household version. Changes sync between connected devices.</p>
 <div class="badge" id="syncStatus">Connecting…</div>
 </div>
@@ -164,22 +189,26 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <nav aria-label="Main navigation" class="v8-bottom-nav"><button class="active" data-v8-nav="today" type="button"><span>⌂</span>Today</button><button data-v8-nav="inventory" type="button"><span>▣</span>Inventory</button><button data-v8-nav="add" type="button"><span>＋</span>Add Food</button><button data-v8-nav="shopping" type="button"><span>🛒</span>Shopping List</button><button data-v8-nav="more" type="button"><span>☰</span>More</button></nav>
 <section class="tab-panel hidden" id="inventory">
 <div class="panel">
-<div class="between"><div><h2>Food inventory</h2><p class="muted">Add or edit ingredients you have on hand. Food role helps Pantry Planner build meals that make sense together.</p></div><div class="row"><span class="badge" id="inventoryCount">0 items</span><button class="btn danger" id="resetInventory" type="button">Reset inventory</button></div></div>
-<form class="grid" id="inventoryForm">
-<label>Food name<input id="foodName" placeholder="Chicken breast" required=""/></label>
-<label>Servings on hand<input id="foodQty" min="0" placeholder="4" required="" step="1" type="number"/></label>
-<label>Calories / serving<input id="foodCal" min="0" placeholder="120" required="" step="1" type="number"/></label>
-<label>Protein g / serving<input id="foodProtein" min="0" placeholder="20" required="" step="0.1" type="number"/></label>
-<label>Carbs g / serving<input id="foodCarbs" min="0" placeholder="0" required="" step="0.1" type="number"/></label>
-<label>Fat g / serving<input id="foodFat" min="0" placeholder="0" required="" step="0.1" type="number"/></label>
+<div class="inventory-compact-heading"><h2>Food Inventory</h2><span class="badge" id="inventoryCount">0 items</span></div>
+<form id="inventoryForm" class="inventory-compact-form">
+<label class="inventory-name"><span class="sr-only">Food name</span><input id="foodName" placeholder="Food name (e.g. Chicken breast)" aria-label="Food name" required=""/></label>
+<div class="inventory-macro-grid">
+<label>Serv.<input id="foodQty" aria-label="Servings on hand" min="0" placeholder="4" required="" step="1" type="number"/></label>
+<label>Cal.<input id="foodCal" aria-label="Calories per serving" min="0" placeholder="120" required="" step="1" type="number"/></label>
+<label>Prot.<input id="foodProtein" aria-label="Protein grams per serving" min="0" placeholder="20" required="" step="0.1" type="number"/></label>
+<label>Carbs<input id="foodCarbs" aria-label="Carbohydrate grams per serving" min="0" placeholder="0" required="" step="0.1" type="number"/></label>
+<label>Fat<input id="foodFat" aria-label="Fat grams per serving" min="0" placeholder="0" required="" step="0.1" type="number"/></label>
+</div>
+<div class="inventory-meal-row"><span>Meal types</span><div class="inventory-meal-checks"><label><input name="foodMealType" type="checkbox" value="Breakfast"/>Breakfast</label><label><input name="foodMealType" type="checkbox" value="Lunch"/>Lunch</label><label><input name="foodMealType" type="checkbox" value="Dinner"/>Dinner</label></div></div>
+<details class="inventory-extra" id="inventoryExtra"><summary>Additional settings <span>Role · Who can eat it · Use window</span></summary><div class="inventory-extra-fields">
 <label>Food role<select id="foodRole"><option value="Auto">Auto — let Pantry Planner decide</option><option value="Main / Protein">Main / Protein</option><option value="Starch / Base">Starch / Base</option><option value="Fruit / Vegetable">Fruit / Vegetable</option><option value="Side / Snack">Side / Snack</option><option value="Sauce / Condiment">Sauce / Condiment</option></select></label>
-<div><label>Meal type</label><div class="meal-type-picker"><label class="meal-type-option"><span>Breakfast</span><input name="foodMealType" type="checkbox" value="Breakfast"/></label><label class="meal-type-option"><span>Lunch</span><input name="foodMealType" type="checkbox" value="Lunch"/></label><label class="meal-type-option"><span>Dinner</span><input name="foodMealType" type="checkbox" value="Dinner"/></label></div></div>
 <label>Who can eat it?<select id="foodOwner"><option value="Everyone">Everyone</option></select></label>
 <label>How soon should this be used?<select id="foodUseWindow"><option value="0">0 days — Use today</option><option value="2">1–2 days — Use first</option><option value="4">3–4 days — Use soon</option><option value="7">5–7 days — Keep in mind</option><option selected="" value="8">8+ days — Plenty of time</option></select></label>
-<div class="row" style="align-self:end"><button class="btn primary" id="saveFoodBtn" type="submit">Add food</button><button class="btn hidden" id="cancelEditBtn" type="button">Cancel edit</button></div>
+</div></details>
+<div class="inventory-actions"><button class="btn primary" id="saveFoodBtn" type="submit">Add food</button><button class="btn hidden" id="cancelEditBtn" type="button">Cancel edit</button></div>
 </form><div class="status muted small" id="inventoryMsg"></div>
 </div>
-<div class="panel" style="margin-top:12px"><div class="between"><div><h2>Backup &amp; Restore</h2><p class="muted small">Save a copy of your household, inventory, shopping list, logged meals, and learned meal patterns. Restoring a backup replaces the current shared Pantry Planner data.</p></div><div class="row"><button class="btn primary" id="backupData" type="button">Backup data</button><button class="btn" id="restoreData" type="button">Restore data</button><input accept="application/json,.json" class="hidden" id="restoreFile" type="file"/></div></div><div class="status muted small" id="backupMsg"></div></div>
+<details class="panel inventory-maintenance" style="margin-top:12px"><summary>Inventory maintenance · Backup &amp; Restore</summary><div class="row" style="margin:12px 0"><button class="btn danger" id="resetInventory" type="button">Reset inventory</button></div><div class="between"><div><h2>Backup &amp; Restore</h2><p class="muted small">Save a copy of your household, inventory, shopping list, logged meals, and learned meal patterns. Restoring a backup replaces the current shared Pantry Planner data.</p></div><div class="row"><button class="btn primary" id="backupData" type="button">Backup data</button><button class="btn" id="restoreData" type="button">Restore data</button><input accept="application/json,.json" class="hidden" id="restoreFile" type="file"/></div></div><div class="status muted small" id="backupMsg"></div></details>
 <div class="cards" id="inventoryList"></div>
 </section>
 <section class="tab-panel hidden" id="household">
@@ -446,7 +475,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   function useWindowInfo(f){const d=currentUseDays(f);if(d===0)return{rank:5,label:"0 days — Use today"};if(d<=2)return{rank:4,label:"1–2 days — Use first"};if(d<=4)return{rank:3,label:"3–4 days — Use soon"};if(d<=7)return{rank:2,label:"5–7 days — Keep in mind"};return{rank:1,label:"8+ days — Plenty of time"};}
   function renderFoods(){$("#inventoryCount").textContent=`${state.foods.length} item${state.foods.length===1?"":"s"}`;const sortedFoods=[...state.foods].sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));$("#inventoryList").innerHTML=sortedFoods.length?sortedFoods.map(f=>`<div class="card${Number(f.qty)<=0?" out-of-stock":""}"><div class="between"><div><h3>${esc(f.name)}</h3><p class="${Number(f.qty)<=0?"small":"muted small"}">${f.qty} servings · ${f.cal} cal · Protein ${f.protein}g · Carbs ${f.carbs||0}g · Fat ${f.fat||0}g each</p></div><div class="row"><button class="btn" data-edit-food="${f.id}">Edit</button><button class="btn danger" data-remove-food="${f.id}">Remove</button></div></div>${(f.mealTypes||[]).map(t=>`<span class="badge">${esc(t)}</span>`).join("")}<span class="badge">${esc(f.role||"Auto")}</span><span class="badge">${esc(f.owner==="Both"?"Everyone":f.owner)}</span><span class="badge">${esc(useWindowInfo(f).label)}</span></div>`).join(""):'<p class="muted">No food entered yet.</p>';$$("[data-edit-food]").forEach(b=>b.onclick=()=>startEdit(Number(b.dataset.editFood)));$$("[data-remove-food]").forEach(b=>b.onclick=()=>{state.foods=state.foods.filter(f=>f.id!==Number(b.dataset.removeFood));if(editingFoodId===Number(b.dataset.removeFood))cancelEdit();save();renderFoods();});renderCustomMealOptions();renderRecipes();}
 
-  function startEdit(id){const f=state.foods.find(x=>x.id===id);if(!f)return;editingFoodId=id;$("#foodName").value=f.name;$("#foodQty").value=f.qty;$("#foodCal").value=f.cal;$("#foodProtein").value=f.protein;$("#foodCarbs").value=f.carbs||0;$("#foodFat").value=f.fat||0;$("#foodRole").value=f.role||"Auto";$$('input[name="foodMealType"]').forEach(cb=>cb.checked=(f.mealTypes||[]).includes(cb.value));$("#foodOwner").value=f.owner;$("#foodUseWindow").value=String([0,2,4,7,8].includes(currentUseDays(f))?currentUseDays(f):(currentUseDays(f)<=2?2:currentUseDays(f)<=4?4:currentUseDays(f)<=7?7:8));$("#saveFoodBtn").textContent="Save changes";$("#cancelEditBtn").classList.remove("hidden");$("#inventoryMsg").textContent=`Editing ${f.name}`;window.scrollTo({top:0,behavior:"smooth"});}
+  function startEdit(id){const f=state.foods.find(x=>x.id===id);if(!f)return;$("#inventoryExtra").open=true;editingFoodId=id;$("#foodName").value=f.name;$("#foodQty").value=f.qty;$("#foodCal").value=f.cal;$("#foodProtein").value=f.protein;$("#foodCarbs").value=f.carbs||0;$("#foodFat").value=f.fat||0;$("#foodRole").value=f.role||"Auto";$$('input[name="foodMealType"]').forEach(cb=>cb.checked=(f.mealTypes||[]).includes(cb.value));$("#foodOwner").value=f.owner;$("#foodUseWindow").value=String([0,2,4,7,8].includes(currentUseDays(f))?currentUseDays(f):(currentUseDays(f)<=2?2:currentUseDays(f)<=4?4:currentUseDays(f)<=7?7:8));$("#saveFoodBtn").textContent="Save changes";$("#cancelEditBtn").classList.remove("hidden");$("#inventoryMsg").textContent=`Editing ${f.name}`;window.scrollTo({top:0,behavior:"smooth"});}
   function cancelEdit(){editingFoodId=null;$("#inventoryForm").reset();$$('input[name="foodMealType"]').forEach(cb=>cb.checked=false);syncOwners();$("#foodRole").value="Auto";$("#foodUseWindow").value="8";$("#saveFoodBtn").textContent="Add food";$("#cancelEditBtn").classList.add("hidden");$("#inventoryMsg").textContent="";}
   $("#cancelEditBtn").onclick=cancelEdit;
   $("#inventoryForm").onsubmit=e=>{e.preventDefault();const obj={id:editingFoodId??Date.now(),name:$("#foodName").value.trim(),qty:Math.max(0,Math.floor(num($("#foodQty").value,0))),cal:num($("#foodCal").value),protein:num($("#foodProtein").value),carbs:num($("#foodCarbs").value),fat:num($("#foodFat").value),role:$("#foodRole").value,mealTypes:$$('input[name="foodMealType"]:checked').map(cb=>cb.value),owner:$("#foodOwner").value,useDays:Number($("#foodUseWindow").value),useSetAt:Date.now()};if(!obj.name)return;if(!obj.mealTypes.length){appNotify("Select at least one meal type: Breakfast, Lunch, or Dinner.");return;}if(editingFoodId){const i=state.foods.findIndex(f=>f.id===editingFoodId);if(i>=0)state.foods[i]=obj;$("#inventoryMsg").textContent="Ingredient updated.";}else{state.foods.push(obj);$("#inventoryMsg").textContent="Ingredient added.";}if(obj.qty===0)addToShoppingIfNeeded(obj);else removeAutoShoppingIfRestored(obj);reconcileMealPool();save();cancelEdit();renderFoods();renderShopping();renderMealPool();};
