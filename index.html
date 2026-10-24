@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Pantry Planner v8.1.0.0 — AI Meal Scanner</title>
+<title>Pantry Planner v8.1.0.1 — AI Meal Scanner</title>
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
 <meta content="#0b5f34" name="theme-color"/>
@@ -211,6 +211,33 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 .planned-compact-recipe{font-size:.98rem;font-weight:700;line-height:1.2;margin-top:8px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
 .planned-compact-card>.planned-compact-summary:before{position:absolute;right:9px;top:12px;float:none}
 
+/* Compact scanner: keep capture/review/logging prominent; tuck account controls away. */
+#aiScanPanel{padding:14px}
+#aiScanPanel>h2{margin-bottom:5px}
+#aiScanPanel>p{margin:5px 0 10px;line-height:1.35}
+.scanner-account{padding:0!important;margin-bottom:10px!important;overflow:hidden}
+.scanner-account>details>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:54px;padding:10px 13px;cursor:pointer}
+.scanner-account>details>summary::-webkit-details-marker{display:none}
+.scanner-account>details>summary:after{content:"▾";color:var(--muted);font-size:18px;flex:0 0 auto}
+.scanner-account>details[open]>summary:after{content:"▴"}
+.scanner-account>details[open]>summary{border-bottom:1px solid var(--border)}
+.scanner-account-title{font-weight:750}
+#aiScanAccountSummary{display:block;margin-top:2px}
+.scanner-account-content{padding:10px 13px 12px}
+.scanner-account-content>p{margin:0 0 8px;line-height:1.35}
+.scanner-account-content .grid{gap:8px}
+.scanner-account-content input{margin-top:3px;min-height:42px;padding:8px 10px}
+.scanner-account-content .row{margin-top:8px!important}
+.scanner-account-content .row .btn{flex:1;min-height:40px;padding:8px}
+.scanner-account-content .status{margin-top:5px;line-height:1.35}
+.scanner-capture-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.scanner-capture-row .btn{display:flex;align-items:center;justify-content:center;text-align:center;min-height:46px;padding:8px 10px;line-height:1.2}
+#aiScanStatus{line-height:1.35}
+#aiScanPreview{display:block;max-width:100%;max-height:190px!important;width:auto;object-fit:contain;margin:8px auto;border-radius:12px}
+#aiScanResults{margin-top:8px}
+#aiScanResults>p{margin:7px 0 9px;line-height:1.35}
+#aiScanApply{width:100%}
+@media(max-width:360px){.scanner-capture-row .btn{font-size:14px;padding:7px 5px}}
   /* Compact Build My Own Meal; all IDs and event handlers remain intact. */
   #customMealBuilder{--compact-gap:7px}
   #customMealBuilder h2{margin:0 0 9px;font-size:1.35rem}
@@ -260,7 +287,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="wrap">
 <div class="app-header">
 <img alt="Pantry Planner icon" class="app-icon" src="icon-192.png"/>
-<h1>Pantry Planner v8.0.0.20</h1>
+<h1>Pantry Planner v8.1.0.1</h1>
 <p class="muted">Shared household version. Changes sync between connected devices.</p>
 <div class="badge" id="syncStatus">Connecting…</div>
 </div>
@@ -305,11 +332,11 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="hidden" id="outsideMealBuilder"><div class="panel" id="aiScanPanel" style="margin-bottom:12px">
 <h2>Outside Food <span class="badge">Photo estimate</span></h2>
 <p class="muted small">Scan a meal eaten away from home. Review and edit every estimate before logging. This does not use or change pantry inventory.</p>
-<div class="card" style="margin-bottom:12px"><h3 style="margin-bottom:6px">Scanner account</h3><p class="muted small">Only approved household accounts can scan. Creating an account does not grant scan access.</p>
-<form id="aiScanAuthForm"><div class="grid"><label>Email<input id="aiScanEmail" type="email" autocomplete="username" required/></label><label>Password<input id="aiScanPassword" type="password" autocomplete="current-password" minlength="8" required/></label></div><div class="row" style="margin-top:10px"><button class="btn primary" id="aiScanSignIn" type="submit">Sign in</button><button class="btn" id="aiScanSignUp" type="button">Create account</button><button class="btn hidden" id="aiScanSignOut" type="button">Sign out</button></div></form><div id="aiScanAuthStatus" class="status muted small" role="status" aria-live="polite">Sign in with an approved household account to scan.</div></div>
-<div class="row"><label class="btn" style="cursor:pointer">📷 Take / choose photo<input id="aiScanFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style="display:none"/></label><button class="btn primary" id="aiScanAnalyze" type="button" disabled>Analyze Photo</button></div>
+<div class="card scanner-account"><details id="aiScanAccount"><summary><span><span class="scanner-account-title">Scanner account</span><span class="muted small" id="aiScanAccountSummary">Sign in to scan</span></span></summary><div class="scanner-account-content"><p class="muted small">Only approved household accounts can scan. Creating an account does not grant scan access.</p>
+<form id="aiScanAuthForm"><div class="grid" id="aiScanCredentials"><label>Email<input id="aiScanEmail" type="email" autocomplete="username" required/></label><label>Password<input id="aiScanPassword" type="password" autocomplete="current-password" minlength="8" required/></label></div><div class="row"><button class="btn primary" id="aiScanSignIn" type="submit">Sign in</button><button class="btn" id="aiScanSignUp" type="button">Create account</button><button class="btn hidden" id="aiScanSignOut" type="button">Sign out</button></div></form><div id="aiScanAuthStatus" class="status muted small" role="status" aria-live="polite">Sign in with an approved household account to scan.</div></div></details></div>
+<div class="row scanner-capture-row"><label class="btn" style="cursor:pointer">📷 Take / choose photo<input id="aiScanFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style="display:none"/></label><button class="btn primary" id="aiScanAnalyze" type="button" disabled>Analyze Photo</button></div>
 <div id="aiScanStatus" class="muted small" role="status" aria-live="polite">Select a photo to begin.</div><img id="aiScanPreview" alt="Selected outside meal photo" style="display:none;max-width:100%;max-height:240px;border-radius:12px;margin:8px 0"/>
-<div id="aiScanResults" class="hidden"><div id="aiScanFoods" class="muted small"></div><div id="aiScanUncertainty" class="muted small" style="margin:8px 0"></div><p class="muted small">Photo estimates can miss portion size, cooking oil, and sauces. Check the values below and edit them before logging.</p><button class="btn primary" id="aiScanApply" type="button">Use Estimate in Outside Food</button></div>
+<div id="aiScanResults" class="hidden"><div id="aiScanFoods" class="muted small"></div><div id="aiScanUncertainty" class="muted small" style="margin:8px 0"></div><p class="muted small">Estimates can miss portion size, oil, or sauces. Review and edit values before logging.</p><button class="btn primary" id="aiScanApply" type="button">Use Estimate in Outside Food</button></div>
 </div><h2>Log Outside Food</h2><p class="muted small">Enter the meal yourself or apply a photo estimate, then review the nutrition and tap Log Meal.</p><div class="grid"><label>Meal name<input id="outsideName" placeholder="Restaurant dinner"/></label><label>Meal<select id="outsideMealType"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack/Drink</option></select></label><label>Meal date<input id="outsideMealDate" type="date"/></label><label>Who ate it?<select id="outsidePerson"></select></label><label>Calories<input id="outsideCal" min="0" placeholder="650" step="1" type="number"/></label><label>Protein (g)<input id="outsideProtein" min="0" placeholder="30" step="0.1" type="number"/></label><label>Carbs (g)<input id="outsideCarbs" min="0" placeholder="70" step="0.1" type="number"/></label><label>Fat (g)<input id="outsideFat" min="0" placeholder="25" step="0.1" type="number"/></label></div><div class="custom-meal-final-action"><button class="btn primary" id="logOutsideMeal" type="button">Log Meal</button></div></div>
 <div class="hidden" id="leftoversBuilder"><h2>Leftovers</h2><p class="muted small">Prepared food stays here until it is eaten or discarded. Logging a portion adds its nutrition to that day without changing raw Inventory again.</p><div id="leftoversList" style="margin-top:12px"></div></div>
 </div>
@@ -776,10 +803,10 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   $("#logOutsideMeal").onclick=()=>{const name=$("#outsideName").value.trim()||"Outside food",person=$("#outsidePerson").value,type=$("#outsideMealType").value,day=$("#outsideMealDate").value||localDayKey(Date.now());if(!person){appNotify("Choose who ate this meal.");return;}const vals={cal:Math.ceil(num($("#outsideCal").value)),protein:Math.ceil(num($("#outsideProtein").value)),carbs:Math.ceil(num($("#outsideCarbs").value)),fat:Math.ceil(num($("#outsideFat").value))};if(vals.cal<=0&&vals.protein<=0&&vals.carbs<=0&&vals.fat<=0){appNotify("Enter nutrition for this meal.");return;}const [y,m,d]=day.split("-").map(Number),base=new Date(),stamp=new Date(y,m-1,d,base.getHours(),base.getMinutes(),base.getSeconds()).getTime(),item={outside:true,name,servings:1,people:[person],...vals};if(editingOutsideMealId){const meal=state.loggedMeals.find(x=>String(x.id)===editingOutsideMealId);if(meal){meal.mealType=type;meal.createdAt=stamp;meal.updatedAt=Date.now();meal.items=[item];}}else state.loggedMeals.push({id:`${Date.now()}-outside-${Math.random()}`,createdAt:stamp,updatedAt:Date.now(),mealType:type,source:"outside",items:[item],learnedKeys:[],personDates:{},personDateUpdatedAt:{},personMealTypes:{},personMealTypeUpdatedAt:{}});save();clearOutsideForm();renderTodayMealLog();renderNutrition();};
   // Scanner sign-in uses isolated auth storage so the existing anonymous pantry sync stays unchanged.
   (() => {
-    const fileInput=document.getElementById("aiScanFile"), analyze=document.getElementById("aiScanAnalyze"), status=document.getElementById("aiScanStatus"), preview=document.getElementById("aiScanPreview"), results=document.getElementById("aiScanResults"), foods=document.getElementById("aiScanFoods"), uncertainty=document.getElementById("aiScanUncertainty"), apply=document.getElementById("aiScanApply"), authForm=document.getElementById("aiScanAuthForm"), authStatus=document.getElementById("aiScanAuthStatus"), emailInput=document.getElementById("aiScanEmail"), passwordInput=document.getElementById("aiScanPassword"), signIn=document.getElementById("aiScanSignIn"), signUp=document.getElementById("aiScanSignUp"), signOut=document.getElementById("aiScanSignOut");
+    const fileInput=document.getElementById("aiScanFile"), analyze=document.getElementById("aiScanAnalyze"), status=document.getElementById("aiScanStatus"), preview=document.getElementById("aiScanPreview"), results=document.getElementById("aiScanResults"), foods=document.getElementById("aiScanFoods"), uncertainty=document.getElementById("aiScanUncertainty"), apply=document.getElementById("aiScanApply"), authForm=document.getElementById("aiScanAuthForm"), authStatus=document.getElementById("aiScanAuthStatus"), authDetails=document.getElementById("aiScanAccount"), authSummary=document.getElementById("aiScanAccountSummary"), credentialFields=document.getElementById("aiScanCredentials"), emailInput=document.getElementById("aiScanEmail"), passwordInput=document.getElementById("aiScanPassword"), signIn=document.getElementById("aiScanSignIn"), signUp=document.getElementById("aiScanSignUp"), signOut=document.getElementById("aiScanSignOut");
     let selected=null,estimate=null,objectUrl=null,busy=false,authBusy=false,session=null,scannerClient=null,authNotice="";
     const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
-    const updateAuthUI=()=>{const loggedIn=!!session;authStatus.textContent=authNotice||(loggedIn?`Signed in as ${session.user.email||"household member"}. Scan access is checked securely when you analyze a photo.`:"Sign in with an approved household account to scan.");signIn.classList.toggle("hidden",loggedIn);signUp.classList.toggle("hidden",loggedIn);signOut.classList.toggle("hidden",!loggedIn);analyze.disabled=!selected||!loggedIn||busy||authBusy;};
+    const updateAuthUI=()=>{const loggedIn=!!session;authSummary.textContent=loggedIn?`Signed in · ${session.user.email||"household member"}`:"Sign in to scan";credentialFields.classList.toggle("hidden",loggedIn);authStatus.textContent=authNotice||(loggedIn?"Scan access is checked securely when you analyze a photo.":"Sign in with an approved household account to scan.");signIn.classList.toggle("hidden",loggedIn);signUp.classList.toggle("hidden",loggedIn);signOut.classList.toggle("hidden",!loggedIn);if(loggedIn)authDetails.open=false;analyze.disabled=!selected||!loggedIn||busy||authBusy;};
     const setAuthBusy=value=>{authBusy=value;signIn.disabled=value;signUp.disabled=value;};
     if(window.supabase?.createClient){scannerClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{autoRefreshToken:true,persistSession:true,storageKey:"pantry-planner-ai-scan-auth"}});scannerClient.auth.getSession().then(({data})=>{session=data?.session||null;updateAuthUI();}).catch(()=>{session=null;updateAuthUI();});scannerClient.auth.onAuthStateChange((_event,nextSession)=>{session=nextSession;updateAuthUI();});}else authStatus.textContent="Cloud authentication is unavailable. Check your connection and reload.";
     authForm.addEventListener("submit",async event=>{event.preventDefault();if(!scannerClient||authBusy)return;authNotice="";setAuthBusy(true);authStatus.textContent="Signing in…";try{const {data,error}=await scannerClient.auth.signInWithPassword({email:emailInput.value.trim(),password:passwordInput.value});if(error)throw error;session=data.session;passwordInput.value="";updateAuthUI();}catch(error){authNotice="Sign-in failed. Check the email and password, then try again.";console.warn("Scanner sign-in failed",error?.message||error);}finally{setAuthBusy(false);updateAuthUI();}});
