@@ -919,9 +919,52 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   };
 
   // Planned Meals: planned quantities remain while shopping, and become inventory-bound after stocked.
-  function poolRequirements(){const needs=new Map();for(const entry of state.mealPool||[]){const r=state.recipes.find(x=>String(x.id)===String(entry.recipeId));if(!r)continue;for(const ing of r.ingredients){const id=Number(ing.foodId);needs.set(id,(needs.get(id)||0)+Number(ing.servings)*entry.batches);}}// Saved schedule requirements are counted per finished serving, across both people.
-    const byRecipe=new Map();for(const entry of state.scheduleEntries||[]){const id=String(entry.recipeId);byRecipe.set(id,(byRecipe.get(id)||0)+1);}
-    for(const [id,scheduled] of byRecipe){const r=state.recipes.find(x=>String(x.id)===id);if(!r)continue;const required=Math.max(0,scheduled-preparedCount(id)),batchServings=Math.max(.25,Number(r.batchServings)||1);for(const ing of r.ingredients){const foodId=Number(ing.foodId);needs.set(foodId,(needs.get(foodId)||0)+Number(ing.servings)*required/batchServings);}}return needs;}
+  function poolRequirements(){
+    const needs=new Map();
+    // Planned Meals entries represent whole recipe batches, never fractional ingredients.
+    for(const entry of state.mealPool||[]){
+      const r=state.recipes.find(x=>String(x.id)===String(entry.recipeId));if(!r)continue;
+      const batches=Math.max(0,Number(entry.batches)||0);
+      for(const ing of r.ingredients){const id=Number(ing.foodId);needs.set(id,(needs.get(id)||0)+Number(ing.servings||0)*batches);}
+    }
+    // A scheduled serving can be covered by prepared leftovers. Only the remaining
+    // servings require cooking, and cooking always uses complete recipe batches.
+    const byRecipe=new Map();
+    for(const entry of state.scheduleEntries||[]){
+      if(entry.recipeId==null)continue;
+      const id=String(entry.recipeId),person=state.people.find(p=>Number(p.id)===Number(entry.personId));
+      if(!byRecipe.has(id))byRecipe.set(id,new Map());
+      const key=person?person.name:'__unknown__',counts=byRecipe.get(id);
+      counts.set(key,(counts.get(key)||0)+1);
+    }
+    for(const [id,scheduledByPerson] of byRecipe){
+      const r=state.recipes.find(x=>String(x.id)===id);if(!r)continue;
+      const availableByPerson=new Map(),shared=[];
+      for(const batch of preparedForRecipe(id)){
+        const remaining=Math.max(0,Number(batch.remainingPortions)||0);
+        if(batch.allocations){
+          let allocated=0;
+          for(const [person,amount] of Object.entries(batch.allocations)){
+            const n=Math.max(0,Number(amount)||0);allocated+=n;
+            availableByPerson.set(person,(availableByPerson.get(person)||0)+n);
+          }
+          // Unassigned portions are not available to a named person until assigned.
+        }else shared.push(remaining);
+      }
+      let outstanding=0;
+      for(const [person,count] of scheduledByPerson){
+        const covered=Math.min(count,availableByPerson.get(person)||0);
+        outstanding+=count-covered;
+      }
+      const sharedTotal=shared.reduce((sum,n)=>sum+n,0);
+      outstanding=Math.max(0,outstanding-sharedTotal);
+      const batchServings=Math.max(.25,Number(r.batchServings)||1);
+      const batches=Math.ceil((outstanding-1e-8)/batchServings);
+      if(batches<=0)continue;
+      for(const ing of r.ingredients){const foodId=Number(ing.foodId);needs.set(foodId,(needs.get(foodId)||0)+Number(ing.servings||0)*batches);}
+    }
+    return needs;
+  }
   function poolShoppingNeeds(){const needs=poolRequirements(),out=[];for(const [id,required] of needs){const f=state.foods.find(x=>Number(x.id)===id);if(!f)continue;const missing=Math.max(0,Math.ceil((required-Number(f.qty||0))*100)/100);if(missing>0)out.push({food:f,required,missing});}return out;}
   function reconcileMealPool(){let changed=false;const stock=new Map(state.foods.map(f=>[Number(f.id),Number(f.qty)||0]));const next=[];for(const entry of state.mealPool||[]){const r=state.recipes.find(x=>String(x.id)===String(entry.recipeId));if(!r){changed=true;continue;}const max=r.ingredients.reduce((n,i)=>Math.min(n,Math.floor((stock.get(Number(i.foodId))||0)/(Number(i.servings)||Infinity)+1e-8)),Infinity);const possible=Math.max(0,Number.isFinite(max)?max:0);if(entry.armed){const allowed=Math.min(entry.batches,possible);if(allowed<entry.batches){entry.batches=allowed;changed=true;}if(!allowed)continue;}else if(possible>=entry.batches){entry.armed=true;changed=true;}const reserve=entry.armed?entry.batches:Math.min(entry.batches,possible);for(const i of r.ingredients)stock.set(Number(i.foodId),(stock.get(Number(i.foodId))||0)-Number(i.servings)*reserve);next.push(entry);}if(next.length!==state.mealPool.length)changed=true;state.mealPool=next;return changed;}
   // Prepared recipe batches are tracked in the existing shared leftovers collection.
