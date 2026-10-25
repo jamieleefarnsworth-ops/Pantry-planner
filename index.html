@@ -761,7 +761,21 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 
   function exitLoggedMealEdit(clear=true){editingLoggedMealId=null;$("#useCustomMeal").textContent="Log Meal & Use Inventory";$("#clearCustomMeal").textContent="Clear meal";$("#cancelLoggedMealEdit").classList.add("hidden");$("#customMealDateWrap")?.classList.add("hidden");if($("#customMealDate"))$("#customMealDate").value="";if(clear)customMeal=[];customSelectedPeople=null;renderCustomMealOptions();renderCustomMeal();}
   function editLoggedMeal(id){const meal=(state.loggedMeals||[]).find(m=>String(m.id)===String(id));if(!meal)return;if(meal.source==="outside"||meal.source==="leftover"){openOutsideMeal(meal);return;}const person=mealPeople(meal)[0];if(!person)return;editingLoggedMealId=String(meal.id);customMeal=meal.items.map(i=>({foodId:Number(i.foodId),servings:Number(i.servings),people:[person]}));customSelectedPeople=[person];$("#customMealType").value=meal.mealType;const mealDate=$("#customMealDate");if(mealDate){mealDate.value=localDayKey(meal.createdAt);mealDate.removeAttribute("max");}$("#customMealDateWrap")?.classList.remove("hidden");$("#generatedMealBuilder").classList.add("hidden");$("#customMealBuilder").classList.remove("hidden");$("#mealResult").classList.add("hidden");$("#showCustomMeal").classList.add("active");$("#showGeneratedMeal").classList.remove("active");$("#useCustomMeal").textContent="Save changes";$("#clearCustomMeal").textContent="Clear meal";$("#cancelLoggedMealEdit").classList.remove("hidden");$("#customFood").value="";$("#customFoodInput").value="";$("#customFoodSuggestions").classList.add("hidden");renderCustomMealOptions();renderCustomMeal();$("#customMealBuilder").scrollIntoView({behavior:"smooth",block:"start"});}
-  async function deleteLoggedMeal(id){const meal=(state.loggedMeals||[]).find(m=>String(m.id)===String(id));if(!meal)return;const person=mealPeople(meal)[0]||"this person";if(!await appConfirm(`Delete ${person}'s ${meal.mealType.toLowerCase()} meal?${(meal.source==="outside"||meal.source==="leftover")?"":" Its ingredients will be returned to Inventory."}`))return;const adj=(meal.source==="outside"||meal.source==="leftover")?{ok:true}:applyMealEditInventory(meal.items,[]);if(!adj.ok){appNotify("Could not restore this meal's inventory.");return;}removeLearningContribution(meal.learnedKeys||[]);markMealDeleted(meal.id);state.loggedMeals=state.loggedMeals.filter(m=>String(m.id)!==String(meal.id));if(String(editingLoggedMealId)===String(meal.id))exitLoggedMealEdit();save();renderFoods();renderShopping();renderCustomMealOptions();renderTodayMealLog();}
+  async function deleteLoggedMeal(id){const meal=(state.loggedMeals||[]).find(m=>String(m.id)===String(id));if(!meal)return;const person=mealPeople(meal)[0]||"this person";if(!await appConfirm(`Delete ${person}'s ${meal.mealType.toLowerCase()} meal?${(meal.source==="outside"||meal.source==="leftover")?"":" Its ingredients will be returned to Inventory."}`))return;const preparedMeal=(meal.source==="leftover"||meal.source==="recipe")&&meal.preparedUndo;
+    const adj=(meal.source==="outside"||meal.source==="leftover"||meal.source==="recipe")?{ok:true}:applyMealEditInventory(meal.items,[]);if(!adj.ok){appNotify("Could not restore this meal's inventory.");return;}if(preparedMeal){
+      const undo=meal.preparedUndo,qty=Number(undo.portions)||0;
+      if(qty>0){
+        let batch=(state.leftovers||[]).find(x=>String(x.id)===String(undo.batchId));
+        if(!batch){batch={...undo.batch,remainingPortions:0,allocations:undo.batch?.allocations?{}:undefined};state.leftovers.push(batch);}
+        batch.remainingPortions=Number((Number(batch.remainingPortions||0)+qty).toFixed(2));
+        if(undo.person&&undo.wasAllocated){batch.allocations=batch.allocations||{};batch.allocations[undo.person]=Number((Number(batch.allocations[undo.person]||0)+qty).toFixed(2));}
+        batch.updatedAt=Date.now();
+      }
+      if(undo.scheduleEntry&&!(state.scheduleEntries||[]).some(e=>String(e.key)===String(undo.scheduleEntry.key))){
+        state.scheduleEntries.push(undo.scheduleEntry);scheduleEdits.delete(undo.scheduleEntry.key);delete scheduleDraft[undo.scheduleEntry.key];
+      }
+    }
+    removeLearningContribution(meal.learnedKeys||[]);markMealDeleted(meal.id);state.loggedMeals=state.loggedMeals.filter(m=>String(m.id)!==String(meal.id));if(String(editingLoggedMealId)===String(meal.id))exitLoggedMealEdit();save();renderFoods();renderShopping();renderCustomMealOptions();renderTodayMealLog();renderLeftovers();renderMealSchedule();renderMealPool();renderNutrition();}
   let recipeDraft=[],editingRecipeId=null;
   function recipeFoodName(id){return state.foods.find(f=>f.id===Number(id))?.name||"Missing inventory item";}
   function recipeNutrition(recipeOrItems){const items=Array.isArray(recipeOrItems)?recipeOrItems:(recipeOrItems?.ingredients||[]);return items.reduce((t,i)=>{const f=state.foods.find(x=>x.id===Number(i.foodId)),serv=Number(i.servings)||0;if(f){t.cal+=(Number(f.cal)||0)*serv;t.protein+=(Number(f.protein)||0)*serv;t.carbs+=(Number(f.carbs)||0)*serv;t.fat+=(Number(f.fat)||0)*serv;}return t;},{cal:0,protein:0,carbs:0,fat:0});}
@@ -843,13 +857,15 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
     if(!logLeftoverPortions(current,amount,person,true))return;
     current.allocations[person]=Math.max(0,Number((available-amount).toFixed(2)));
     const meal=state.loggedMeals[state.loggedMeals.length-1];
+    meal.preparedUndo={...meal.preparedUndo,person,wasAllocated:true};
     if(date){meal.createdAt=scheduleMealDate(date);meal.updatedAt=Date.now();}
     // When this prepared serving also occupies a scheduled slot, complete that slot.
     // Never remove another person's meal or a different recipe.
     const owner=state.people.find(p=>p.name===person);
-    const matching=(state.scheduleEntries||[]).filter(e=>owner&&Number(e.personId)===Number(owner.id)&&String(e.recipeId)===String(current.recipeId)&&current.recipeId!=null).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const matching=(state.scheduleEntries||[]).filter(e=>owner&&Number(e.personId)===Number(owner.id)&&String(e.recipeId)===String(current.recipeId)&&current.recipeId!=null&&(!date||String(e.date)===String(date))).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     const completed=matching.slice(0,Math.min(Math.floor(amount+1e-8),matching.length));
     if(completed.length){
+      if(completed.length===1)meal.preparedUndo.scheduleEntry={...completed[0]};
       const completedKeys=new Set(completed.map(e=>e.key));
       state.scheduleEntries=state.scheduleEntries.filter(e=>!completedKeys.has(e.key));
       for(const e of completed){scheduleEdits.add(e.key);scheduleDraft[e.key]='';}
@@ -859,7 +875,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
     save();renderMealPool();renderMealSchedule();renderLeftovers();renderTodayMealLog();renderNutrition();renderShopping();
   }
   function leftoverLogItem(leftover,portions,person){return {outside:true,name:leftover.name,servings:Number(portions),people:[person],cal:leftover.calPerPortion*portions,protein:leftover.proteinPerPortion*portions,carbs:leftover.carbsPerPortion*portions,fat:leftover.fatPerPortion*portions};}
-  function logLeftoverPortions(leftover,portions,person,assigned=false){if(!person||portions<=0)return false;if(!assigned&&leftover.allocations&&portions>Math.max(0,Number(leftover.remainingPortions)-Object.values(leftover.allocations).reduce((n,v)=>n+Number(v||0),0))+1e-9){appNotify("These servings are assigned in Planned Meals. Log them there instead.");return false;}if(portions>leftover.remainingPortions+1e-9){appNotify("Not enough portions remain.");return false;}const now=Date.now(),item=leftoverLogItem(leftover,portions,person);state.loggedMeals.push({id:`${now}-leftover-${Math.random()}`,createdAt:now,updatedAt:now,mealType:leftover.mealType,source:"leftover",items:[item],learnedKeys:[],personDates:{},personDateUpdatedAt:{},personMealTypes:{},personMealTypeUpdatedAt:{}});leftover.remainingPortions=Number((leftover.remainingPortions-portions).toFixed(2));leftover.updatedAt=now;if(leftover.remainingPortions<=0)state.leftovers=state.leftovers.filter(x=>String(x.id)!==String(leftover.id));return true;}
+  function logLeftoverPortions(leftover,portions,person,assigned=false){if(!person||portions<=0)return false;if(!assigned&&leftover.allocations&&portions>Math.max(0,Number(leftover.remainingPortions)-Object.values(leftover.allocations).reduce((n,v)=>n+Number(v||0),0))+1e-9){appNotify("These servings are assigned in Planned Meals. Log them there instead.");return false;}if(portions>leftover.remainingPortions+1e-9){appNotify("Not enough portions remain.");return false;}const now=Date.now(),item=leftoverLogItem(leftover,portions,person),batchSnapshot=JSON.parse(JSON.stringify(leftover));state.loggedMeals.push({id:`${now}-leftover-${Math.random()}`,createdAt:now,updatedAt:now,mealType:leftover.mealType,source:"leftover",items:[item],preparedUndo:{batchId:leftover.id,batch:batchSnapshot,portions,person,wasAllocated:!!leftover.allocations},learnedKeys:[],personDates:{},personDateUpdatedAt:{},personMealTypes:{},personMealTypeUpdatedAt:{}});leftover.remainingPortions=Number((leftover.remainingPortions-portions).toFixed(2));leftover.updatedAt=now;if(leftover.remainingPortions<=0)state.leftovers=state.leftovers.filter(x=>String(x.id)!==String(leftover.id));return true;}
   function renderLeftovers(){
     const box=$("#leftoversList");if(!box)return;
     const rows=(state.leftovers||[]).slice().sort((a,b)=>b.createdAt-a.createdAt);
@@ -979,7 +995,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
     for(const entry of entries.slice(0,amount)){
       const batch=leftovers.find(x=>x.remainingPortions>=1-1e-8&&(!x.allocations||allocationRemaining(x,person.name)>=1-1e-8));if(!batch){appNotify('No prepared serving available.');return;}
       const ok=logLeftoverPortions(batch,1,person.name,true);if(!ok)return;if(batch.allocations)batch.allocations[person.name]=Number((allocationRemaining(batch,person.name)-1).toFixed(2));
-      const logged=state.loggedMeals[state.loggedMeals.length-1];logged.createdAt=scheduleMealDate(logDate);logged.updatedAt=Date.now();logged.mealType=entry.mealType;
+      const logged=state.loggedMeals[state.loggedMeals.length-1];logged.preparedUndo.scheduleEntry={...entry};logged.createdAt=scheduleMealDate(logDate);logged.updatedAt=Date.now();logged.mealType=entry.mealType;
       remaining--;
     }
     const used=new Set(entries.slice(0,amount).map(x=>x.key));
