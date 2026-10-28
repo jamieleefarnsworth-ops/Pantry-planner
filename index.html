@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Pantry Planner v8.1.0.2 — AI Meal Scanner</title>
+<title>Pantry Planner v8.1.0.3 — AI Meal Scanner</title>
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
 <meta content="#0b5f34" name="theme-color"/>
@@ -203,7 +203,9 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 .planned-compact-summary:before{content:"▸";float:right;color:#39e27d;font-size:16px}
 .planned-compact-card[open]>.planned-compact-summary:before{content:"▾"}
 .planned-compact-details{border-top:1px solid rgba(150,150,150,.2);padding:9px}
-.planned-compact-details [data-delete-scheduled]{position:static!important;margin-top:10px;width:100%!important;height:36px!important;font-size:14px!important}
+.planned-compact-details .planned-compact-delete{position:static;flex:0 0 29px;margin:0;align-self:flex-start}
+.planned-compact-info-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.planned-compact-info-row>.muted{flex:1;min-width:0;padding-top:5px}
 
 /* v8.0.0.20 consistent three-line scheduled meal summaries */
 .planned-compact-card>.planned-compact-summary{height:116px;min-height:116px;box-sizing:border-box;overflow:hidden;position:relative;padding:12px 25px 10px 10px}
@@ -297,7 +299,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="wrap">
 <div class="app-header">
 <img alt="Pantry Planner icon" class="app-icon" src="icon-192.png"/>
-<h1>Pantry Planner v8.1.0.2</h1>
+<h1>Pantry Planner v8.1.0.3</h1>
 <p class="muted">Shared household version. Changes sync between connected devices.</p>
 <div class="badge" id="syncStatus">Connecting…</div>
 </div>
@@ -1071,7 +1073,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
           <div class="planned-compact-date">${esc(scheduledDate)}</div>
           <div class="planned-compact-type">${esc(e.mealType)}</div>
           <div class="planned-compact-recipe">${esc(r.name)}</div>
-          </summary><button type="button" data-delete-scheduled="${esc(key)}" aria-label="Remove ${esc(r.name)} from Planned Meals" title="Remove planned meal" class="planned-compact-delete">×</button><div class="planned-compact-details"><div class="muted small" style="font-size:.72rem">${Number(prepared.toFixed(2))} prepared servings available · ${count} scheduled</div>
+          </summary><div class="planned-compact-details"><div class="planned-compact-info-row"><div class="muted small" style="font-size:.72rem">${Number(prepared.toFixed(2))} prepared servings available · ${count} scheduled</div><button type="button" data-delete-scheduled="${esc(key)}" aria-label="Remove ${esc(r.name)} from Planned Meals" title="Remove planned meal" class="planned-compact-delete">×</button></div>
           <div class="small" style="margin-top:4px">${Math.round(n.cal/batch)} cal · <span style="color:#39E27D">P${Math.round(n.protein/batch)}</span> <span style="color:#55B4FF">C${Math.round(n.carbs/batch)}</span> <span style="color:#FF6652">F${Math.round(n.fat/batch)}</span></div>
           ${ready?`<label class="small" style="display:block;margin-top:8px">Date eaten<input type="date" data-log-scheduled-date="${esc(key)}" value="${scheduleKey(new Date())}" style="width:100%;min-width:0;margin:4px 0;padding:7px"></label>`:''}
           <label class="small" style="display:block;margin-top:7px">${ready?'Log':'Batch'} <input aria-label="${ready?'Amount to log':'Batches to make'}" data-make-amount="${esc(key)}" type="number" min="1" max="${ready?Math.min(count,Math.floor(prepared)):1}" step="1" value="1" style="width:65px;max-width:100%;margin:4px 0;padding:7px;text-align:center" ${ready?'':'disabled'}></label>
