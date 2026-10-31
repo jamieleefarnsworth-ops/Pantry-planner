@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>Pantry Planner v8.1.0.3 — AI Meal Scanner</title>
+<title>Pantry Planner v8.1.0.4 — AI Meal Scanner</title>
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
 <meta content="#0b5f34" name="theme-color"/>
@@ -299,7 +299,7 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 <div class="wrap">
 <div class="app-header">
 <img alt="Pantry Planner icon" class="app-icon" src="icon-192.png"/>
-<h1>Pantry Planner v8.1.0.3</h1>
+<h1>Pantry Planner v8.1.0.4</h1>
 <p class="muted">Shared household version. Changes sync between connected devices.</p>
 <div class="badge" id="syncStatus">Connecting…</div>
 </div>
@@ -909,6 +909,17 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
       const x=state.leftovers.find(v=>String(v.id)===String(b.dataset.useLeftover));if(!x)return;
       const portions=num(document.querySelector(`[data-leftover-portions="${CSS.escape(String(x.id))}"]`).value,0);
       const person=document.querySelector(`[data-leftover-person="${CSS.escape(String(x.id))}"]`).value;
+      if(x.allocations){
+        const allocated=allocationRemaining(x,person);
+        if(!Number.isFinite(portions)||portions<=0||portions>allocated+1e-8){appNotify("Choose servings assigned to this person.");return;}
+        const owner=state.people.find(p=>p.name===person);
+        const scheduled=(state.scheduleEntries||[]).filter(e=>owner&&Number(e.personId)===Number(owner.id)&&String(e.recipeId)===String(x.recipeId)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+        const whole=Math.min(scheduled.length,Math.floor(portions+1e-8));
+        if(whole)logScheduledPrepared(scheduled.slice(0,whole),whole,scheduled[0].date);
+        const extra=Number((portions-whole).toFixed(2));
+        if(extra>1e-8){const current=state.leftovers.find(v=>String(v.id)===String(x.id));if(current)logAssignedBatch(current,person,extra,scheduleKey(new Date()),true);}
+        renderMealPool();renderLeftovers();renderTodayMealLog();renderNutrition();return;
+      }
       if(logLeftoverPortions(x,portions,person)){save();renderLeftovers();renderTodayMealLog();renderNutrition();}
     });
     $$('[data-discard-leftover]').forEach(b=>b.onclick=async()=>{
@@ -1097,28 +1108,29 @@ body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
         const extra=Number((available-reserved).toFixed(2));
         if(extra>1e-8)standaloneBatches.push({batch:b,extra});
       }
-      const assignedCards=standaloneBatches.map(({batch:b,extra})=>`
+      const assignedCards=standaloneBatches.flatMap(({batch:b,extra})=>Array.from({length:Math.floor(extra+1e-8)},(_,servingIndex)=>`
         <details class="card planned-compact-card"><summary class="planned-compact-summary">
           <div class="muted small">Unplanned · Prepared${b.mealType?' · '+esc(b.mealType):''}</div>
           <h3 style="font-size:1rem;overflow-wrap:anywhere">${esc(b.name)}</h3>
-          </summary><div class="planned-compact-details"><div class="muted small">${Number(extra.toFixed(2))} extra servings available</div>
+          </summary><div class="planned-compact-details"><div class="muted small">1 extra serving available</div>
           <div class="small">${Math.round(b.calPerPortion)} cal · P${Math.round(b.proteinPerPortion)} C${Math.round(b.carbsPerPortion)} F${Math.round(b.fatPerPortion)} per serving</div>
-          <label class="small">Date eaten<input type="date" data-assigned-date="${esc(b.id)}-${esc(person.id)}" value="${scheduleKey(new Date())}" style="width:100%;min-width:0;margin:5px 0;padding:7px"></label>
-          <label class="small">Log <input type="number" min="0.25" max="${extra}" step="0.25" value="${Math.min(1,extra)}" data-assigned-amount="${esc(b.id)}-${esc(person.id)}" style="width:75px;max-width:100%;padding:7px"></label>
-          <button class="btn primary" style="width:100%;margin-top:8px;padding:9px 5px;white-space:normal" type="button" data-log-assigned="${esc(b.id)}-${esc(person.id)}">Log Leftovers</button>
-        </div></details>`).join('');
+          <label class="small">Date eaten<input type="date" data-assigned-date="${esc(b.id)}-${esc(person.id)}-${servingIndex}" value="${scheduleKey(new Date())}" style="width:100%;min-width:0;margin:5px 0;padding:7px"></label>
+          <label class="small">Log <input type="number" min="0.25" max="1" step="1" value="1" data-assigned-amount="${esc(b.id)}-${esc(person.id)}-${servingIndex}" style="width:75px;max-width:100%;padding:7px"></label>
+          <button class="btn primary" style="width:100%;margin-top:8px;padding:9px 5px;white-space:normal" type="button" data-log-assigned="${esc(b.id)}-${esc(person.id)}-${servingIndex}">Log Leftovers</button>
+        </div></details>`)).join('');
       return `<div style="min-width:0"><h3 style="font-size:1rem;text-align:center;margin:5px 0 12px">${esc(person.name)}'s Meals</h3>${assignedCards}${personCards||(!assignedCards?'<p class="muted small">No meals planned</p>':'')}</div>`;
     });
     host.innerHTML='<h3>Ready to make / log</h3><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start">'+cardsByPerson.join('')+'</div>';
     host.querySelectorAll('[data-log-assigned]').forEach(btn=>btn.onclick=async()=>{
-      const id=btn.dataset.logAssigned,person=state.people.find(p=>id.endsWith('-'+p.id));
-      const batch=state.leftovers.find(b=>person&&id===String(b.id)+'-'+person.id);
+      const id=btn.dataset.logAssigned,person=state.people.find(p=>id.includes('-'+p.id+'-'));
+      const batch=state.leftovers.find(b=>person&&id.startsWith(String(b.id)+'-'+person.id+'-'));
       if(!batch||!person)return;
-      const extra=standaloneBatches.find(x=>String(x.batch.id)===String(batch.id))?.extra||0;
+      const scheduled=(state.scheduleEntries||[]).filter(e=>String(e.recipeId)===String(batch.recipeId)&&Number(e.personId)===Number(person.id)).length;
+      const extra=Math.max(0,allocationRemaining(batch,person.name)-Math.min(scheduled,allocationRemaining(batch,person.name)));
       const amount=Number(Array.from(host.querySelectorAll('[data-assigned-amount]')).find(x=>x.dataset.assignedAmount===id)?.value);
       const date=Array.from(host.querySelectorAll('[data-assigned-date]')).find(x=>x.dataset.assignedDate===id)?.value;
       if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')){appNotify('Choose a valid date.');return;}
-      if(!Number.isFinite(amount)||amount<=0||amount>extra+1e-8){appNotify('Only unplanned extra servings can be logged here. Use the dated meal card for scheduled portions.');return;}
+      if(!Number.isFinite(amount)||amount!==1||amount>extra+1e-8){appNotify('Only unplanned extra servings can be logged here. Use the dated meal card for scheduled portions.');return;}
       if(!await appConfirm(`Log ${amount} serving(s) of ${batch.name} to ${person.name}'s Nutrition?`))return;
       logAssignedBatch(batch,person.name,amount,date,true);
     });
